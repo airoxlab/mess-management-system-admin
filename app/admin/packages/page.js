@@ -654,10 +654,14 @@ export default function PackagesPage() {
                             type="button"
                             onClick={() => {
                               setSelectedMember(member);
+                              const memberMeals = getMemberMealCheckIns(member) || [];
                               setFormData(prev => ({
                                 ...prev,
                                 member_id: member.id,
                                 member_type: member.member_type,
+                                breakfast_enabled: memberMeals.includes('breakfast'),
+                                lunch_enabled: memberMeals.includes('lunch'),
+                                dinner_enabled: memberMeals.includes('dinner'),
                               }));
                               setMemberSearchQuery('');
                               setShowMemberDropdown(false);
@@ -698,10 +702,7 @@ export default function PackagesPage() {
                           'bg-indigo-100 text-indigo-700'
                         }`}
                       >
-                        {meal === 'breakfast' && '☀️'}
-                        {meal === 'lunch' && '🍽️'}
-                        {meal === 'dinner' && '🌙'}
-                        {' '}{meal.charAt(0).toUpperCase() + meal.slice(1)}: Checked In
+                        {meal.charAt(0).toUpperCase() + meal.slice(1)}: Checked In
                       </span>
                     ))
                   ) : (
@@ -712,163 +713,168 @@ export default function PackagesPage() {
             )}
 
             {/* Configure Meal Schedule */}
-            <div>
-              <h4 className="text-sm font-medium text-gray-900 mb-3">Configure Meal Schedule</h4>
-              <div className="space-y-3">
-                {/* Breakfast */}
-                <div className={`border rounded-lg p-4 ${formData.breakfast_enabled ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200'}`}>
-                  <div className={`flex items-center justify-between ${formData.breakfast_enabled ? 'mb-3' : ''}`}>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.breakfast_enabled}
-                        onChange={() => handleMealToggle('breakfast')}
-                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                      />
-                      <span className="text-amber-600">☀️</span>
-                      <span className="font-medium">Breakfast</span>
-                    </label>
-                    {formData.breakfast_enabled && (
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-500 whitespace-nowrap">Meals per Month:</span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={formData.breakfast_meals_per_day}
-                          onChange={(e) => setFormData(prev => ({ ...prev, breakfast_meals_per_day: e.target.value }))}
-                          className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  {formData.breakfast_enabled && (
-                    <div className="flex flex-wrap gap-2">
-                      {WEEKDAYS.map((day) => (
-                        <label
-                          key={day.id}
-                          className={`flex items-center px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
-                            formData.breakfast_days?.includes(day.id)
-                              ? 'bg-amber-100 border-amber-400 text-amber-700'
-                              : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                          }`}
-                        >
+            {selectedMember && getMemberMealCheckIns(selectedMember)?.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Configure Meal Schedule</h4>
+                <div className="space-y-3">
+                  {/* Breakfast */}
+                  {getMemberMealCheckIns(selectedMember)?.includes('breakfast') && (
+                    <div className={`border rounded-lg p-4 ${formData.breakfast_enabled ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200'}`}>
+                      <div className={`flex items-center justify-between ${formData.breakfast_enabled ? 'mb-3' : ''}`}>
+                        <label className="flex items-center space-x-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={formData.breakfast_days?.includes(day.id)}
-                            onChange={() => handleDayToggle('breakfast', day.id)}
-                            className="sr-only"
+                            checked={formData.breakfast_enabled}
+                            onChange={() => handleMealToggle('breakfast')}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                           />
-                          <span className="text-sm font-medium">{day.label}</span>
+                          <span className="font-medium">Breakfast</span>
                         </label>
-                      ))}
+                        {formData.breakfast_enabled && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm text-gray-500 whitespace-nowrap">Meals per Month:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={formData.breakfast_meals_per_day}
+                              onChange={(e) => setFormData(prev => ({ ...prev, breakfast_meals_per_day: e.target.value }))}
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      {formData.breakfast_enabled && (
+                        <div className="flex flex-wrap gap-2">
+                          {WEEKDAYS.map((day) => (
+                            <label
+                              key={day.id}
+                              className={`flex items-center px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
+                                formData.breakfast_days?.includes(day.id)
+                                  ? 'bg-amber-100 border-amber-400 text-amber-700'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.breakfast_days?.includes(day.id)}
+                                onChange={() => handleDayToggle('breakfast', day.id)}
+                                className="sr-only"
+                              />
+                              <span className="text-sm font-medium">{day.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
 
-                {/* Lunch */}
-                <div className={`border rounded-lg p-4 ${formData.lunch_enabled ? 'border-orange-300 bg-orange-50/30' : 'border-gray-200'}`}>
-                  <div className={`flex items-center justify-between ${formData.lunch_enabled ? 'mb-3' : ''}`}>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.lunch_enabled}
-                        onChange={() => handleMealToggle('lunch')}
-                        className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                      />
-                      <span className="text-orange-600">🍽️</span>
-                      <span className="font-medium">Lunch</span>
-                    </label>
-                    {formData.lunch_enabled && (
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-500 whitespace-nowrap">Meals per Month:</span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={formData.lunch_meals_per_day}
-                          onChange={(e) => setFormData(prev => ({ ...prev, lunch_meals_per_day: e.target.value }))}
-                          className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  {formData.lunch_enabled && (
-                    <div className="flex flex-wrap gap-2">
-                      {WEEKDAYS.map((day) => (
-                        <label
-                          key={day.id}
-                          className={`flex items-center px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
-                            formData.lunch_days?.includes(day.id)
-                              ? 'bg-orange-100 border-orange-400 text-orange-700'
-                              : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                          }`}
-                        >
+                  {/* Lunch */}
+                  {getMemberMealCheckIns(selectedMember)?.includes('lunch') && (
+                    <div className={`border rounded-lg p-4 ${formData.lunch_enabled ? 'border-orange-300 bg-orange-50/30' : 'border-gray-200'}`}>
+                      <div className={`flex items-center justify-between ${formData.lunch_enabled ? 'mb-3' : ''}`}>
+                        <label className="flex items-center space-x-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={formData.lunch_days?.includes(day.id)}
-                            onChange={() => handleDayToggle('lunch', day.id)}
-                            className="sr-only"
+                            checked={formData.lunch_enabled}
+                            onChange={() => handleMealToggle('lunch')}
+                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                           />
-                          <span className="text-sm font-medium">{day.label}</span>
+                          <span className="font-medium">Lunch</span>
                         </label>
-                      ))}
+                        {formData.lunch_enabled && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm text-gray-500 whitespace-nowrap">Meals per Month:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={formData.lunch_meals_per_day}
+                              onChange={(e) => setFormData(prev => ({ ...prev, lunch_meals_per_day: e.target.value }))}
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      {formData.lunch_enabled && (
+                        <div className="flex flex-wrap gap-2">
+                          {WEEKDAYS.map((day) => (
+                            <label
+                              key={day.id}
+                              className={`flex items-center px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
+                                formData.lunch_days?.includes(day.id)
+                                  ? 'bg-orange-100 border-orange-400 text-orange-700'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.lunch_days?.includes(day.id)}
+                                onChange={() => handleDayToggle('lunch', day.id)}
+                                className="sr-only"
+                              />
+                              <span className="text-sm font-medium">{day.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
 
-                {/* Dinner */}
-                <div className={`border rounded-lg p-4 ${formData.dinner_enabled ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'}`}>
-                  <div className={`flex items-center justify-between ${formData.dinner_enabled ? 'mb-3' : ''}`}>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.dinner_enabled}
-                        onChange={() => handleMealToggle('dinner')}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-indigo-600">🌙</span>
-                      <span className="font-medium">Dinner</span>
-                    </label>
-                    {formData.dinner_enabled && (
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-500 whitespace-nowrap">Meals per Month:</span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={formData.dinner_meals_per_day}
-                          onChange={(e) => setFormData(prev => ({ ...prev, dinner_meals_per_day: e.target.value }))}
-                          className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  {formData.dinner_enabled && (
-                    <div className="flex flex-wrap gap-2">
-                      {WEEKDAYS.map((day) => (
-                        <label
-                          key={day.id}
-                          className={`flex items-center px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
-                            formData.dinner_days?.includes(day.id)
-                              ? 'bg-indigo-100 border-indigo-400 text-indigo-700'
-                              : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                          }`}
-                        >
+                  {/* Dinner */}
+                  {getMemberMealCheckIns(selectedMember)?.includes('dinner') && (
+                    <div className={`border rounded-lg p-4 ${formData.dinner_enabled ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'}`}>
+                      <div className={`flex items-center justify-between ${formData.dinner_enabled ? 'mb-3' : ''}`}>
+                        <label className="flex items-center space-x-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={formData.dinner_days?.includes(day.id)}
-                            onChange={() => handleDayToggle('dinner', day.id)}
-                            className="sr-only"
+                            checked={formData.dinner_enabled}
+                            onChange={() => handleMealToggle('dinner')}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                           />
-                          <span className="text-sm font-medium">{day.label}</span>
+                          <span className="font-medium">Dinner</span>
                         </label>
-                      ))}
+                        {formData.dinner_enabled && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm text-gray-500 whitespace-nowrap">Meals per Month:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={formData.dinner_meals_per_day}
+                              onChange={(e) => setFormData(prev => ({ ...prev, dinner_meals_per_day: e.target.value }))}
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      {formData.dinner_enabled && (
+                        <div className="flex flex-wrap gap-2">
+                          {WEEKDAYS.map((day) => (
+                            <label
+                              key={day.id}
+                              className={`flex items-center px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
+                                formData.dinner_days?.includes(day.id)
+                                  ? 'bg-indigo-100 border-indigo-400 text-indigo-700'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.dinner_days?.includes(day.id)}
+                                onChange={() => handleDayToggle('dinner', day.id)}
+                                className="sr-only"
+                              />
+                              <span className="text-sm font-medium">{day.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Package Price */}
             <div>
