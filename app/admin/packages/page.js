@@ -26,13 +26,13 @@ const initialFormData = {
   member_id: '',
   member_type: 'student',
   breakfast_enabled: false,
-  breakfast_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+  breakfast_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
   breakfast_meals_per_day: 1,
   lunch_enabled: false,
-  lunch_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+  lunch_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
   lunch_meals_per_day: 1,
   dinner_enabled: false,
-  dinner_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+  dinner_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
   dinner_meals_per_day: 1,
   price: '',
   is_active: true,
@@ -144,17 +144,37 @@ export default function PackagesPage() {
   const getMemberMealCheckIns = (member) => {
     if (!member) return null;
 
+    // Helper to expand 'full_day' or 'full' to all three meals
+    const expandFullDay = (meals) => {
+      if (!meals) return [];
+
+      // If it's a string value
+      if (typeof meals === 'string') {
+        if (meals === 'full_day' || meals === 'full') {
+          return ['breakfast', 'lunch', 'dinner'];
+        }
+        return [meals];
+      }
+
+      // If it's an array, check if it contains 'full_day' or 'full'
+      if (Array.isArray(meals)) {
+        if (meals.includes('full_day') || meals.includes('full')) {
+          return ['breakfast', 'lunch', 'dinner'];
+        }
+        return meals;
+      }
+
+      return [];
+    };
+
     if (member.member_type === 'student' && member.preferred_meal_plan) {
-      return member.preferred_meal_plan;
+      return expandFullDay(member.preferred_meal_plan);
     }
     if (member.member_type === 'faculty' && member.preferred_meal_plan) {
-      if (member.preferred_meal_plan === 'full_day') {
-        return ['breakfast', 'lunch', 'dinner'];
-      }
-      return [member.preferred_meal_plan];
+      return expandFullDay(member.preferred_meal_plan);
     }
     if (member.member_type === 'staff' && member.meal_timing_preference) {
-      return member.meal_timing_preference;
+      return expandFullDay(member.meal_timing_preference);
     }
 
     return [];
@@ -572,7 +592,7 @@ export default function PackagesPage() {
       {/* Add/Edit Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editingPackage ? 'Edit Package' : 'Add Package'} size="xl">
         <form onSubmit={handleSubmit}>
-          <div className="max-h-[70vh] overflow-y-auto space-y-4 scrollbar-hide">
+          <div className="min-h-[60vh] max-h-[85vh] overflow-y-auto space-y-4 scrollbar-hide">
             {/* Member Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Select Member *</label>

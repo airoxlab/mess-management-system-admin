@@ -63,10 +63,10 @@ export async function PUT(request) {
   try {
     const body = await request.json();
 
-    // First, get the existing organization
+    // First, get the existing organization (including settings for merging)
     const { data: existing, error: fetchError } = await supabase
       .from('organizations')
-      .select('id')
+      .select('id, settings')
       .limit(1)
       .single();
 
@@ -84,6 +84,12 @@ export async function PUT(request) {
     if ('support_phone' in body) updateData.support_phone = body.support_phone?.trim() || null;
     if ('support_whatsapp' in body) updateData.support_whatsapp = body.support_whatsapp?.trim() || null;
     if ('lost_card_fee' in body) updateData.lost_card_fee = parseFloat(body.lost_card_fee) || 500;
+
+    // Merge settings with existing settings (don't replace entirely)
+    if ('settings' in body) {
+      const existingSettings = existing?.settings || {};
+      updateData.settings = { ...existingSettings, ...(body.settings || {}) };
+    }
 
     let organization;
 

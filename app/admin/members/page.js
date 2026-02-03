@@ -60,11 +60,14 @@ const initialStudentFormData = {
 
 const initialFacultyFormData = {
   full_name: '',
+  father_name: '',
+  cnic_no: '',
+  employee_id: '',
   department: '',
   designation: '',
-  employee_id: '',
   contact_number: '',
   email_address: '',
+  residential_address: '',
   date_of_birth: '',
   membership_type: 'full_time',
   preferred_meal_plan: 'lunch',
@@ -87,6 +90,7 @@ const initialStaffFormData = {
   department_section: '',
   designation: '',
   contact_number: '',
+  email_address: '',
   residential_address: '',
   date_of_birth: '',
   duty_shift: 'morning',
@@ -425,7 +429,7 @@ export default function MembersPage() {
       if (!formData.student_cnic?.trim()) errors.student_cnic = 'CNIC is required';
       if (!formData.roll_number?.trim()) errors.roll_number = 'Roll number is required';
       if (!formData.department_program?.trim()) errors.department_program = 'Department/Program is required';
-      // Date of birth is optional
+      if (!formData.date_of_birth) errors.date_of_birth = 'Date of birth is required';
       if (!formData.residential_address?.trim()) errors.residential_address = 'Address is required';
       // Contact number is required only for Male students
       if (formData.gender === 'male' && !formData.contact_number?.trim()) {
@@ -434,13 +438,17 @@ export default function MembersPage() {
       if (!formData.emergency_contact_name?.trim()) errors.emergency_contact_name = 'Emergency contact name is required';
       if (!formData.emergency_contact_number?.trim()) errors.emergency_contact_number = 'Emergency contact number is required';
       if (!formData.preferred_meal_plan?.length) errors.preferred_meal_plan = 'Select at least one meal plan';
+      if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
     } else if (memberType === 'faculty') {
       if (!formData.full_name?.trim()) errors.full_name = 'Full name is required';
+      if (!formData.father_name?.trim()) errors.father_name = 'Father name is required';
+      if (!formData.cnic_no?.trim()) errors.cnic_no = 'CNIC is required';
+      if (!formData.employee_id?.trim()) errors.employee_id = 'Employee ID is required';
       if (!formData.department?.trim()) errors.department = 'Department is required';
       if (!formData.designation?.trim()) errors.designation = 'Designation is required';
-      if (!formData.employee_id?.trim()) errors.employee_id = 'Employee ID is required';
       if (!formData.contact_number?.trim()) errors.contact_number = 'Contact number is required';
       if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
+      if (!formData.residential_address?.trim()) errors.residential_address = 'Address is required';
     } else {
       if (!formData.full_name?.trim()) errors.full_name = 'Full name is required';
       if (!formData.father_name?.trim()) errors.father_name = 'Father name is required';
@@ -449,6 +457,7 @@ export default function MembersPage() {
       if (!formData.department_section?.trim()) errors.department_section = 'Department/Section is required';
       if (!formData.designation?.trim()) errors.designation = 'Designation is required';
       if (!formData.contact_number?.trim()) errors.contact_number = 'Contact number is required';
+      if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
       if (!formData.residential_address?.trim()) errors.residential_address = 'Address is required';
       if (!formData.meal_timing_preference?.length) errors.meal_timing_preference = 'Select at least one meal timing';
     }
@@ -607,7 +616,7 @@ export default function MembersPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Department/Program" name="department_program" value={formData.department_program} onChange={handleFormChange} error={formErrors.department_program} required />
-            <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
+            <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} error={formErrors.date_of_birth} required />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select label="Gender" name="gender" value={formData.gender} onChange={handleFormChange} options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }]} />
@@ -615,7 +624,7 @@ export default function MembersPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Contact Number" name="contact_number" type="tel" value={formData.contact_number} onChange={handleFormChange} error={formErrors.contact_number} placeholder="0300-1234567" maxLength={12} required={formData.gender === 'male'} />
-            <Input label="Email Address" name="email_address" type="email" value={formData.email_address} onChange={handleFormChange} />
+            <Input label="Email Address" name="email_address" type="email" value={formData.email_address} onChange={handleFormChange} error={formErrors.email_address} required />
           </div>
           <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} error={formErrors.residential_address} rows={2} required />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -672,6 +681,10 @@ export default function MembersPage() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Full Name" name="full_name" value={formData.full_name} onChange={handleFormChange} error={formErrors.full_name} required />
+            <Input label="Father Name" name="father_name" value={formData.father_name} onChange={handleFormChange} error={formErrors.father_name} required />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input label="CNIC No" name="cnic_no" value={formData.cnic_no} onChange={handleFormChange} error={formErrors.cnic_no} placeholder="38101-9802589-1" maxLength={15} required disabled={addEditModal.mode === 'edit'} />
             <Input label="Employee ID" name="employee_id" value={formData.employee_id} onChange={handleFormChange} error={formErrors.employee_id} required disabled={addEditModal.mode === 'edit'} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -682,7 +695,10 @@ export default function MembersPage() {
             <Input label="Contact Number" name="contact_number" type="tel" value={formData.contact_number} onChange={handleFormChange} error={formErrors.contact_number} placeholder="0300-1234567" maxLength={12} required />
             <Input label="Email Address" name="email_address" type="email" value={formData.email_address} onChange={handleFormChange} error={formErrors.email_address} required />
           </div>
-          <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} error={formErrors.residential_address} rows={2} required />
+            <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }, { value: 'day_to_day', label: 'Day to Day' }]} />
             <Select label="Preferred Meal Plan" name="preferred_meal_plan" value={formData.preferred_meal_plan} onChange={handleFormChange} options={[{ value: 'lunch', label: 'Lunch Only' }, { value: 'dinner', label: 'Dinner Only' }, { value: 'full_day', label: 'Full Day' }]} />
@@ -718,9 +734,12 @@ export default function MembersPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Contact Number" name="contact_number" type="tel" value={formData.contact_number} onChange={handleFormChange} error={formErrors.contact_number} placeholder="0300-1234567" maxLength={12} required />
+            <Input label="Email Address" name="email_address" type="email" value={formData.email_address} onChange={handleFormChange} error={formErrors.email_address} required />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} error={formErrors.residential_address} rows={2} required />
             <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
           </div>
-          <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} error={formErrors.residential_address} rows={2} required />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select label="Duty Shift" name="duty_shift" value={formData.duty_shift} onChange={handleFormChange} options={[{ value: 'morning', label: 'Morning' }, { value: 'evening', label: 'Evening' }, { value: 'night', label: 'Night' }, { value: 'full_day', label: 'Full Day' }]} />
             <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }]} />
@@ -828,15 +847,18 @@ export default function MembersPage() {
           <div className="bg-gray-50 rounded-lg p-4">
             <h4 className="font-medium text-gray-900 mb-3">Personal Information</h4>
             <DetailRow label="Full Name" value={member.full_name} />
+            <DetailRow label="Father Name" value={member.father_name} />
+            <DetailRow label="CNIC" value={member.cnic_no} />
             <DetailRow label="Employee ID" value={member.employee_id} />
-            <DetailRow label="Department" value={member.department} />
-            <DetailRow label="Designation" value={member.designation} />
             <DetailRow label="Date of Birth" value={formatDate(member.date_of_birth)} />
             <DetailRow label="Contact" value={member.contact_number} />
             <DetailRow label="Email" value={member.email_address} />
+            <DetailRow label="Address" value={member.residential_address} />
           </div>
           <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 mb-3">Membership Details</h4>
+            <h4 className="font-medium text-gray-900 mb-3">Work & Membership</h4>
+            <DetailRow label="Department" value={member.department} />
+            <DetailRow label="Designation" value={member.designation} />
             <DetailRow label="Membership Type" value={MEMBERSHIP_TYPE_LABELS[member.membership_type]} badge badgeColor="bg-blue-100 text-blue-700" />
             <DetailRow label="Meal Plan" value={FACULTY_MEAL_PLAN_LABELS[member.preferred_meal_plan]} />
             <DetailRow label="Food Preference" value={FOOD_PREFERENCE_LABELS[member.food_preference]} />
@@ -861,6 +883,7 @@ export default function MembersPage() {
             <DetailRow label="Employee ID" value={member.employee_id} />
             <DetailRow label="Date of Birth" value={formatDate(member.date_of_birth)} />
             <DetailRow label="Contact" value={member.contact_number} />
+            <DetailRow label="Email" value={member.email_address} />
             <DetailRow label="Address" value={member.residential_address} />
           </div>
           <div className="bg-gray-50 rounded-lg p-4">

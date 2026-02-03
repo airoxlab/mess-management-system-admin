@@ -21,6 +21,13 @@ export default function SettingsPage() {
     support_phone: '',
     support_whatsapp: '',
     lost_card_fee: 500,
+    // Meal Timings
+    breakfast_start: '07:00',
+    breakfast_end: '09:00',
+    lunch_start: '12:00',
+    lunch_end: '14:00',
+    dinner_start: '19:00',
+    dinner_end: '21:00',
   });
 
   useEffect(() => {
@@ -34,6 +41,7 @@ export default function SettingsPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.organization) {
+          const orgSettings = data.organization.settings || {};
           setSettings({
             name: data.organization.name || 'LIMHS CAFETERIA',
             logo_url: data.organization.logo_url || null,
@@ -43,6 +51,13 @@ export default function SettingsPage() {
             support_phone: data.organization.support_phone || '',
             support_whatsapp: data.organization.support_whatsapp || '',
             lost_card_fee: data.organization.lost_card_fee ?? 500,
+            // Meal Timings from settings jsonb
+            breakfast_start: orgSettings.breakfast_start || '07:00',
+            breakfast_end: orgSettings.breakfast_end || '09:00',
+            lunch_start: orgSettings.lunch_start || '12:00',
+            lunch_end: orgSettings.lunch_end || '14:00',
+            dinner_start: orgSettings.dinner_start || '19:00',
+            dinner_end: orgSettings.dinner_end || '21:00',
           });
         }
       }
@@ -57,6 +72,41 @@ export default function SettingsPage() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setSettings((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Generate time options in 30-minute intervals with AM/PM format
+  const timeOptions = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const hour24 = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+      const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      const period = h >= 12 ? 'PM' : 'AM';
+      const label = `${hour12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
+      timeOptions.push({ value: hour24, label });
+    }
+  }
+
+  // Time Picker Component - Single dropdown with AM/PM format
+  const TimePicker = ({ name, label }) => {
+    return (
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {label}
+        </label>
+        <select
+          value={settings[name]}
+          onChange={(e) => setSettings((prev) => ({ ...prev, [name]: e.target.value }))}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+        >
+          {timeOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+    );
   };
 
   const handleLogoUpload = async (e) => {
@@ -158,10 +208,23 @@ export default function SettingsPage() {
     try {
       setSaving(true);
 
+      // Separate meal timings into the settings jsonb field
+      const mealTimings = {
+        breakfast_start: settings.breakfast_start,
+        breakfast_end: settings.breakfast_end,
+        lunch_start: settings.lunch_start,
+        lunch_end: settings.lunch_end,
+        dinner_start: settings.dinner_start,
+        dinner_end: settings.dinner_end,
+      };
+
       const response = await fetch('/api/organization', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({
+          ...settings,
+          settings: mealTimings,
+        }),
       });
 
       const data = await response.json();
@@ -172,6 +235,7 @@ export default function SettingsPage() {
 
       // Update local state with saved data to ensure sync
       if (data.organization) {
+        const orgSettings = data.organization.settings || {};
         setSettings({
           name: data.organization.name || 'LIMHS CAFETERIA',
           logo_url: data.organization.logo_url || null,
@@ -181,6 +245,13 @@ export default function SettingsPage() {
           support_phone: data.organization.support_phone || '',
           support_whatsapp: data.organization.support_whatsapp || '',
           lost_card_fee: data.organization.lost_card_fee ?? 500,
+          // Meal Timings from settings jsonb
+          breakfast_start: orgSettings.breakfast_start || '07:00',
+          breakfast_end: orgSettings.breakfast_end || '09:00',
+          lunch_start: orgSettings.lunch_start || '12:00',
+          lunch_end: orgSettings.lunch_end || '14:00',
+          dinner_start: orgSettings.dinner_start || '19:00',
+          dinner_end: orgSettings.dinner_end || '21:00',
         });
       }
 
@@ -212,6 +283,11 @@ export default function SettingsPage() {
     { id: 'fees', label: 'Fees', icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    )},
+    { id: 'meal_timings', label: 'Meal Timings', icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     )},
   ];
@@ -673,6 +749,132 @@ export default function SettingsPage() {
                         </p>
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Meal Timings Tab */}
+              {activeTab === 'meal_timings' && (
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary-100 rounded-lg">
+                        <svg className="w-5 h-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Meal Service Hours</h3>
+                        <p className="text-sm text-gray-500">Configure timing for each meal</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="space-y-4">
+                      {/* Breakfast Row */}
+                      <div className="flex items-center gap-4 p-3 bg-orange-50 rounded-lg">
+                        <div className="flex items-center gap-2 min-w-[100px]">
+                          <div className="p-1.5 bg-orange-100 rounded">
+                            <svg className="w-4 h-4 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                          </div>
+                          <span className="font-medium text-gray-900">Breakfast</span>
+                        </div>
+                        <div className="flex-1 grid grid-cols-2 gap-3">
+                          <select
+                            value={settings.breakfast_start}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, breakfast_start: e.target.value }))}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                          >
+                            {timeOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={settings.breakfast_end}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, breakfast_end: e.target.value }))}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                          >
+                            {timeOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Lunch Row */}
+                      <div className="flex items-center gap-4 p-3 bg-yellow-50 rounded-lg">
+                        <div className="flex items-center gap-2 min-w-[100px]">
+                          <div className="p-1.5 bg-yellow-100 rounded">
+                            <svg className="w-4 h-4 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                          </div>
+                          <span className="font-medium text-gray-900">Lunch</span>
+                        </div>
+                        <div className="flex-1 grid grid-cols-2 gap-3">
+                          <select
+                            value={settings.lunch_start}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, lunch_start: e.target.value }))}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                          >
+                            {timeOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={settings.lunch_end}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, lunch_end: e.target.value }))}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                          >
+                            {timeOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Dinner Row */}
+                      <div className="flex items-center gap-4 p-3 bg-indigo-50 rounded-lg">
+                        <div className="flex items-center gap-2 min-w-[100px]">
+                          <div className="p-1.5 bg-indigo-100 rounded">
+                            <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                            </svg>
+                          </div>
+                          <span className="font-medium text-gray-900">Dinner</span>
+                        </div>
+                        <div className="flex-1 grid grid-cols-2 gap-3">
+                          <select
+                            value={settings.dinner_start}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, dinner_start: e.target.value }))}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                          >
+                            {timeOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={settings.dinner_end}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, dinner_end: e.target.value }))}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                          >
+                            {timeOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Compact Info */}
+                    <p className="mt-4 text-xs text-gray-500 flex items-center gap-1.5">
+                      <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Members can only check in during these time slots
+                    </p>
                   </div>
                 </div>
               )}

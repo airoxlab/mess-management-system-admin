@@ -186,23 +186,22 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       {/* Compact Header Section */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white">
-        <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0)', backgroundSize: '20px 20px' }}></div>
-        <div className="relative px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+      <div className="relative overflow-hidden bg-white border-b border-slate-200 shadow-sm">
+        <div className="relative px-4 sm:px-6 lg:px-8 py-2">
           <div className="flex items-center justify-between gap-3">
             {/* Left: Title */}
             <div className="flex items-center gap-4">
               <div>
-                <h1 className="text-lg sm:text-xl font-bold">Dashboard</h1>
-                <p className="text-slate-400 text-xs">{greeting()}</p>
+                <h1 className="text-lg sm:text-xl font-bold text-slate-900">Dashboard</h1>
+                <p className="text-emerald-600 text-xs">{greeting()}</p>
               </div>
             </div>
 
             {/* Center: Pakistan Time */}
-            <div className="hidden sm:flex items-center bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/10">
+            <div className="hidden sm:flex items-center bg-slate-100 rounded-xl px-4 py-2 border border-slate-200">
               <div className="text-center">
-                <p className="text-sm font-mono font-bold tracking-wider">{formatPakistanTime()}</p>
-                <p className="text-[10px] text-slate-400">{formatPakistanDate()}</p>
+                <p className="text-sm font-mono font-bold tracking-wider text-slate-900">{formatPakistanTime()}</p>
+                <p className="text-[10px] text-slate-500">{formatPakistanDate()}</p>
               </div>
             </div>
 
@@ -211,16 +210,16 @@ export default function AdminDashboard() {
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="px-3 py-2 text-xs bg-white/10 border border-white/20 rounded-lg text-white focus:ring-2 focus:ring-white/30 focus:border-transparent backdrop-blur-sm transition-all"
+                className="px-3 py-2 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
               >
-                <option value="today" className="text-slate-900">Today</option>
-                <option value="week" className="text-slate-900">This Week</option>
-                <option value="month" className="text-slate-900">This Month</option>
-                <option value="year" className="text-slate-900">This Year</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="year">This Year</option>
               </select>
               <button
                 onClick={loadDashboardData}
-                className="p-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg transition-all active:scale-95"
+                className="p-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-all active:scale-95 text-slate-600"
                 title="Refresh"
               >
                 <RefreshIcon className="w-4 h-4" />
@@ -646,38 +645,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-            <SummaryCard
-              title="Students"
-              count={members.students.length}
-              approved={members.students.filter(m => m.status === 'approved').length}
-              icon={<StudentIcon />}
-              gradient="from-blue-500 to-blue-600"
-            />
-            <SummaryCard
-              title="Faculty"
-              count={members.faculty.length}
-              approved={members.faculty.filter(m => m.status === 'approved').length}
-              icon={<FacultyIcon />}
-              gradient="from-violet-500 to-violet-600"
-            />
-            <SummaryCard
-              title="Staff"
-              count={members.staff.length}
-              approved={members.staff.filter(m => m.status === 'approved').length}
-              icon={<StaffIcon />}
-              gradient="from-orange-500 to-orange-600"
-            />
-            <SummaryCard
-              title="Packages"
-              count={packages.length}
-              approved={packages.filter(p => p.is_active).length}
-              icon={<PackageIcon />}
-              gradient="from-emerald-500 to-emerald-600"
-              label="Active"
-            />
-          </div>
         </div>
       )}
     </div>
