@@ -84,9 +84,9 @@ export default function AdminDashboard() {
       let totalRevenue = 0;
       pkgs.forEach(pkg => {
         if (pkg.is_active) {
-          if (pkg.breakfast_enabled) totalMeals += parseInt(pkg.breakfast_meals_per_day) || 0;
-          if (pkg.lunch_enabled) totalMeals += parseInt(pkg.lunch_meals_per_day) || 0;
-          if (pkg.dinner_enabled) totalMeals += parseInt(pkg.dinner_meals_per_day) || 0;
+          if (pkg.breakfast_enabled) totalMeals += parseInt(pkg.breakfast_meals_per_month) || 0;
+          if (pkg.lunch_enabled) totalMeals += parseInt(pkg.lunch_meals_per_month) || 0;
+          if (pkg.dinner_enabled) totalMeals += parseInt(pkg.dinner_meals_per_month) || 0;
           totalRevenue += parseFloat(pkg.price) || 0;
         }
       });
@@ -124,17 +124,17 @@ export default function AdminDashboard() {
     {
       name: 'Breakfast',
       packages: packages.filter(p => p.breakfast_enabled && p.is_active).length,
-      meals: packages.reduce((sum, p) => sum + (p.breakfast_enabled && p.is_active ? (parseInt(p.breakfast_meals_per_day) || 0) : 0), 0)
+      meals: packages.reduce((sum, p) => sum + (p.breakfast_enabled && p.is_active ? (parseInt(p.breakfast_meals_per_month) || 0) : 0), 0)
     },
     {
       name: 'Lunch',
       packages: packages.filter(p => p.lunch_enabled && p.is_active).length,
-      meals: packages.reduce((sum, p) => sum + (p.lunch_enabled && p.is_active ? (parseInt(p.lunch_meals_per_day) || 0) : 0), 0)
+      meals: packages.reduce((sum, p) => sum + (p.lunch_enabled && p.is_active ? (parseInt(p.lunch_meals_per_month) || 0) : 0), 0)
     },
     {
       name: 'Dinner',
       packages: packages.filter(p => p.dinner_enabled && p.is_active).length,
-      meals: packages.reduce((sum, p) => sum + (p.dinner_enabled && p.is_active ? (parseInt(p.dinner_meals_per_day) || 0) : 0), 0)
+      meals: packages.reduce((sum, p) => sum + (p.dinner_enabled && p.is_active ? (parseInt(p.dinner_meals_per_month) || 0) : 0), 0)
     },
   ];
 

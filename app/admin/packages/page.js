@@ -27,13 +27,13 @@ const initialFormData = {
   member_type: 'student',
   breakfast_enabled: false,
   breakfast_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-  breakfast_meals_per_day: 1,
+  breakfast_meals_per_month: 1,
   lunch_enabled: false,
   lunch_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-  lunch_meals_per_day: 1,
+  lunch_meals_per_month: 1,
   dinner_enabled: false,
   dinner_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-  dinner_meals_per_day: 1,
+  dinner_meals_per_month: 1,
   price: '',
   is_active: true,
 };
@@ -198,13 +198,13 @@ export default function PackagesPage() {
       member_type: pkg.member_type,
       breakfast_enabled: pkg.breakfast_enabled || false,
       breakfast_days: pkg.breakfast_days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-      breakfast_meals_per_day: pkg.breakfast_meals_per_day || 1,
+      breakfast_meals_per_month: pkg.breakfast_meals_per_month || 1,
       lunch_enabled: pkg.lunch_enabled || false,
       lunch_days: pkg.lunch_days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-      lunch_meals_per_day: pkg.lunch_meals_per_day || 1,
+      lunch_meals_per_month: pkg.lunch_meals_per_month || 1,
       dinner_enabled: pkg.dinner_enabled || false,
       dinner_days: pkg.dinner_days || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-      dinner_meals_per_day: pkg.dinner_meals_per_day || 1,
+      dinner_meals_per_month: pkg.dinner_meals_per_month || 1,
       price: pkg.price || '',
       is_active: pkg.is_active,
     });
@@ -282,9 +282,9 @@ export default function PackagesPage() {
       const submitData = {
         ...formData,
         price: parseFloat(formData.price),
-        breakfast_meals_per_day: parseInt(formData.breakfast_meals_per_day) || 1,
-        lunch_meals_per_day: parseInt(formData.lunch_meals_per_day) || 1,
-        dinner_meals_per_day: parseInt(formData.dinner_meals_per_day) || 1,
+        breakfast_meals_per_month: parseInt(formData.breakfast_meals_per_month) || 1,
+        lunch_meals_per_month: parseInt(formData.lunch_meals_per_month) || 1,
+        dinner_meals_per_month: parseInt(formData.dinner_meals_per_month) || 1,
       };
 
       const url = editingPackage
@@ -351,13 +351,13 @@ export default function PackagesPage() {
   const calculateTotalMeals = (pkg) => {
     let total = 0;
     if (pkg.breakfast_enabled) {
-      total += parseInt(pkg.breakfast_meals_per_day) || 0;
+      total += parseInt(pkg.breakfast_meals_per_month) || 0;
     }
     if (pkg.lunch_enabled) {
-      total += parseInt(pkg.lunch_meals_per_day) || 0;
+      total += parseInt(pkg.lunch_meals_per_month) || 0;
     }
     if (pkg.dinner_enabled) {
-      total += parseInt(pkg.dinner_meals_per_day) || 0;
+      total += parseInt(pkg.dinner_meals_per_month) || 0;
     }
     return total;
   };
@@ -757,8 +757,8 @@ export default function PackagesPage() {
                               type="number"
                               min="1"
                               max="100"
-                              value={formData.breakfast_meals_per_day}
-                              onChange={(e) => setFormData(prev => ({ ...prev, breakfast_meals_per_day: e.target.value }))}
+                              value={formData.breakfast_meals_per_month}
+                              onChange={(e) => setFormData(prev => ({ ...prev, breakfast_meals_per_month: e.target.value }))}
                               className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
                             />
                           </div>
@@ -809,8 +809,8 @@ export default function PackagesPage() {
                               type="number"
                               min="1"
                               max="100"
-                              value={formData.lunch_meals_per_day}
-                              onChange={(e) => setFormData(prev => ({ ...prev, lunch_meals_per_day: e.target.value }))}
+                              value={formData.lunch_meals_per_month}
+                              onChange={(e) => setFormData(prev => ({ ...prev, lunch_meals_per_month: e.target.value }))}
                               className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
                             />
                           </div>
@@ -861,8 +861,8 @@ export default function PackagesPage() {
                               type="number"
                               min="1"
                               max="100"
-                              value={formData.dinner_meals_per_day}
-                              onChange={(e) => setFormData(prev => ({ ...prev, dinner_meals_per_day: e.target.value }))}
+                              value={formData.dinner_meals_per_month}
+                              onChange={(e) => setFormData(prev => ({ ...prev, dinner_meals_per_month: e.target.value }))}
                               className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
                             />
                           </div>
@@ -978,7 +978,7 @@ export default function PackagesPage() {
                       <span className="w-24 text-amber-600 font-medium">☀️ Breakfast</span>
                       <div>
                         <p className="text-sm">{pkg.breakfast_days?.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}</p>
-                        <p className="text-xs text-gray-500">{pkg.breakfast_meals_per_day} meal(s) per month</p>
+                        <p className="text-xs text-gray-500">{pkg.breakfast_meals_per_month} meal(s) per month</p>
                       </div>
                     </div>
                   )}
@@ -987,7 +987,7 @@ export default function PackagesPage() {
                       <span className="w-24 text-orange-600 font-medium">🍽️ Lunch</span>
                       <div>
                         <p className="text-sm">{pkg.lunch_days?.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}</p>
-                        <p className="text-xs text-gray-500">{pkg.lunch_meals_per_day} meal(s) per month</p>
+                        <p className="text-xs text-gray-500">{pkg.lunch_meals_per_month} meal(s) per month</p>
                       </div>
                     </div>
                   )}
@@ -996,7 +996,7 @@ export default function PackagesPage() {
                       <span className="w-24 text-indigo-600 font-medium">🌙 Dinner</span>
                       <div>
                         <p className="text-sm">{pkg.dinner_days?.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}</p>
-                        <p className="text-xs text-gray-500">{pkg.dinner_meals_per_day} meal(s) per month</p>
+                        <p className="text-xs text-gray-500">{pkg.dinner_meals_per_month} meal(s) per month</p>
                       </div>
                     </div>
                   )}

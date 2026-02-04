@@ -166,9 +166,9 @@ export default function ReportsPage() {
       let totalMeals = 0;
       let totalRevenue = 0;
       activePackages.forEach(pkg => {
-        if (pkg.breakfast_enabled) totalMeals += parseInt(pkg.breakfast_meals_per_day) || 0;
-        if (pkg.lunch_enabled) totalMeals += parseInt(pkg.lunch_meals_per_day) || 0;
-        if (pkg.dinner_enabled) totalMeals += parseInt(pkg.dinner_meals_per_day) || 0;
+        if (pkg.breakfast_enabled) totalMeals += parseInt(pkg.breakfast_meals_per_month) || 0;
+        if (pkg.lunch_enabled) totalMeals += parseInt(pkg.lunch_meals_per_month) || 0;
+        if (pkg.dinner_enabled) totalMeals += parseInt(pkg.dinner_meals_per_month) || 0;
         totalRevenue += parseFloat(pkg.price) || 0;
       });
 
@@ -199,19 +199,19 @@ export default function ReportsPage() {
     {
       name: 'Breakfast',
       count: packages.filter(p => p.breakfast_enabled && p.is_active).length,
-      meals: packages.reduce((sum, p) => sum + (p.breakfast_enabled && p.is_active ? (parseInt(p.breakfast_meals_per_day) || 0) : 0), 0),
+      meals: packages.reduce((sum, p) => sum + (p.breakfast_enabled && p.is_active ? (parseInt(p.breakfast_meals_per_month) || 0) : 0), 0),
       color: COLORS.breakfast,
     },
     {
       name: 'Lunch',
       count: packages.filter(p => p.lunch_enabled && p.is_active).length,
-      meals: packages.reduce((sum, p) => sum + (p.lunch_enabled && p.is_active ? (parseInt(p.lunch_meals_per_day) || 0) : 0), 0),
+      meals: packages.reduce((sum, p) => sum + (p.lunch_enabled && p.is_active ? (parseInt(p.lunch_meals_per_month) || 0) : 0), 0),
       color: COLORS.lunch,
     },
     {
       name: 'Dinner',
       count: packages.filter(p => p.dinner_enabled && p.is_active).length,
-      meals: packages.reduce((sum, p) => sum + (p.dinner_enabled && p.is_active ? (parseInt(p.dinner_meals_per_day) || 0) : 0), 0),
+      meals: packages.reduce((sum, p) => sum + (p.dinner_enabled && p.is_active ? (parseInt(p.dinner_meals_per_month) || 0) : 0), 0),
       color: COLORS.dinner,
     },
   ];
