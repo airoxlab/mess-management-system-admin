@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
 
+// Force dynamic rendering - no caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // Default organization data
 const DEFAULT_ORG = {
   name: 'LIMHS CAFETERIA',
@@ -41,13 +45,25 @@ export async function GET() {
 
       return NextResponse.json(
         { organization: newOrg },
-        { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+        {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+          },
+        }
       );
     }
 
     return NextResponse.json(
       { organization },
-      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      }
     );
   } catch (error) {
     console.error('Error fetching organization:', error);
@@ -61,7 +77,15 @@ export async function GET() {
 // PUT - Update organization settings
 export async function PUT(request) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
 
     // First, get the existing organization (including settings for merging)
     const { data: existing, error: fetchError } = await supabase
@@ -123,7 +147,13 @@ export async function PUT(request) {
 
     return NextResponse.json(
       { organization },
-      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      }
     );
   } catch (error) {
     console.error('Error updating organization:', error);

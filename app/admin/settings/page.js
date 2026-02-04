@@ -37,29 +37,41 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/organization', { cache: 'no-store' });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.organization) {
-          const orgSettings = data.organization.settings || {};
-          setSettings({
-            name: data.organization.name || 'LIMHS CAFETERIA',
-            logo_url: data.organization.logo_url || null,
-            address: data.organization.address || '',
-            contact_phone: data.organization.contact_phone || '',
-            contact_email: data.organization.contact_email || '',
-            support_phone: data.organization.support_phone || '',
-            support_whatsapp: data.organization.support_whatsapp || '',
-            lost_card_fee: data.organization.lost_card_fee ?? 500,
-            // Meal Timings from settings jsonb
-            breakfast_start: orgSettings.breakfast_start || '07:00',
-            breakfast_end: orgSettings.breakfast_end || '09:00',
-            lunch_start: orgSettings.lunch_start || '12:00',
-            lunch_end: orgSettings.lunch_end || '14:00',
-            dinner_start: orgSettings.dinner_start || '19:00',
-            dinner_end: orgSettings.dinner_end || '21:00',
-          });
-        }
+      // Add timestamp to bust cache and use proper headers
+      const response = await fetch(`/api/organization?t=${Date.now()}`, {
+        method: 'GET',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch settings');
+      }
+
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (data.organization) {
+        const orgSettings = data.organization.settings || {};
+        setSettings({
+          name: data.organization.name || 'LIMHS CAFETERIA',
+          logo_url: data.organization.logo_url || null,
+          address: data.organization.address || '',
+          contact_phone: data.organization.contact_phone || '',
+          contact_email: data.organization.contact_email || '',
+          support_phone: data.organization.support_phone || '',
+          support_whatsapp: data.organization.support_whatsapp || '',
+          lost_card_fee: data.organization.lost_card_fee ?? 500,
+          // Meal Timings from settings jsonb
+          breakfast_start: orgSettings.breakfast_start || '07:00',
+          breakfast_end: orgSettings.breakfast_end || '09:00',
+          lunch_start: orgSettings.lunch_start || '12:00',
+          lunch_end: orgSettings.lunch_end || '14:00',
+          dinner_start: orgSettings.dinner_start || '19:00',
+          dinner_end: orgSettings.dinner_end || '21:00',
+        });
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -85,29 +97,6 @@ export default function SettingsPage() {
       timeOptions.push({ value: hour24, label });
     }
   }
-
-  // Time Picker Component - Single dropdown with AM/PM format
-  const TimePicker = ({ name, label }) => {
-    return (
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {label}
-        </label>
-        <select
-          value={settings[name]}
-          onChange={(e) => setSettings((prev) => ({ ...prev, [name]: e.target.value }))}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
-        >
-          {timeOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-    );
-  };
 
   const handleLogoUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -140,12 +129,18 @@ export default function SettingsPage() {
         body: formData,
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Upload failed');
+      // Handle empty or invalid JSON responses
+      const text = await response.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error('Invalid response from server');
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Upload failed');
+      }
       const newLogoUrl = data.url;
 
       // Update local state
@@ -159,7 +154,13 @@ export default function SettingsPage() {
       });
 
       if (!saveResponse.ok) {
-        const errorData = await saveResponse.json();
+        const errorText = await saveResponse.text();
+        let errorData;
+        try {
+          errorData = errorText ? JSON.parse(errorText) : {};
+        } catch {
+          errorData = {};
+        }
         throw new Error(errorData.error || 'Failed to save logo to database');
       }
 
@@ -176,22 +177,30 @@ export default function SettingsPage() {
     try {
       // Delete from storage if URL exists
       if (settings.logo_url) {
-        await fetch('/api/upload/delete', {
+        const deleteResponse = await fetch('/api/upload/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: settings.logo_url }),
         });
+        // Ignore delete errors - logo might already be gone
+        if (!deleteResponse.ok) {
+          console.warn('Failed to delete logo from storage');
+        }
       }
 
       // Update local state
       setSettings((prev) => ({ ...prev, logo_url: null }));
 
       // Auto-save only logo_url to database
-      await fetch('/api/organization', {
+      const saveResponse = await fetch('/api/organization', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logo_url: null }),
       });
+
+      if (!saveResponse.ok) {
+        throw new Error('Failed to save changes');
+      }
 
       if (logoInputRef.current) {
         logoInputRef.current.value = '';
@@ -227,7 +236,14 @@ export default function SettingsPage() {
         }),
       });
 
-      const data = await response.json();
+      // Handle empty or invalid JSON responses
+      const text = await response.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error('Invalid response from server');
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to save settings');

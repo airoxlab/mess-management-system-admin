@@ -120,6 +120,16 @@ export default function MembersPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Meal timings from organization settings
+  const [mealTimings, setMealTimings] = useState({
+    breakfast_start: '07:00',
+    breakfast_end: '09:00',
+    lunch_start: '12:00',
+    lunch_end: '14:00',
+    dinner_start: '19:00',
+    dinner_end: '21:00',
+  });
+
   // Modal states
   const [viewModal, setViewModal] = useState({ open: false, member: null });
   const [addEditModal, setAddEditModal] = useState({ open: false, member: null, mode: 'add', memberType: 'student' });
@@ -137,9 +147,103 @@ export default function MembersPage() {
   const [sortColumn, setSortColumn] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
 
+  // Format 24h time to 12h AM/PM format
+  const formatTime12h = (time24) => {
+    if (!time24) return '';
+    const [hours, minutes] = time24.split(':');
+    const h = parseInt(hours, 10);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${hour12.toString().padStart(2, '0')}:${minutes} ${period}`;
+  };
+
+  // Get meal time label
+  const getMealTimeLabel = (meal) => {
+    const start = mealTimings[`${meal}_start`];
+    const end = mealTimings[`${meal}_end`];
+    if (start && end) {
+      return `${formatTime12h(start)} - ${formatTime12h(end)}`;
+    }
+    return '';
+  };
+
+  // Format meal plan display for view modal
+  const formatMealPlanDisplay = (mealPlanArray) => {
+    if (!mealPlanArray || !Array.isArray(mealPlanArray) || mealPlanArray.length === 0) {
+      return '-';
+    }
+
+    // Filter valid meals only (breakfast, lunch, dinner)
+    const validMeals = ['breakfast', 'lunch', 'dinner'];
+    const selectedMeals = mealPlanArray.filter(m => validMeals.includes(m));
+
+    if (selectedMeals.length === 0) {
+      return '-';
+    }
+
+    // Check if Full Day (all 3 meals selected)
+    const isFullDay = selectedMeals.length === 3 &&
+      validMeals.every(m => selectedMeals.includes(m));
+
+    if (isFullDay) {
+      return (
+        <div className="text-right">
+          <div className="font-medium text-gray-900">Full Day</div>
+          <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+            <div>Breakfast: {getMealTimeLabel('breakfast')}</div>
+            <div>Lunch: {getMealTimeLabel('lunch')}</div>
+            <div>Dinner: {getMealTimeLabel('dinner')}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // Show only selected meals in order
+    const orderedMeals = validMeals.filter(m => selectedMeals.includes(m));
+    return (
+      <div className="text-right">
+        {orderedMeals.map((meal, index) => (
+          <div key={meal} className={index > 0 ? 'mt-1' : ''}>
+            <span className="font-medium">{MEAL_PLAN_LABELS[meal]}</span>
+            <span className="text-xs text-gray-500 ml-1">({getMealTimeLabel(meal)})</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // Load organization settings for meal timings
+  const loadMealTimings = async () => {
+    try {
+      const response = await fetch(`/api/organization?t=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
+      if (response.ok) {
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
+        if (data.organization?.settings) {
+          setMealTimings({
+            breakfast_start: data.organization.settings.breakfast_start || '07:00',
+            breakfast_end: data.organization.settings.breakfast_end || '09:00',
+            lunch_start: data.organization.settings.lunch_start || '12:00',
+            lunch_end: data.organization.settings.lunch_end || '14:00',
+            dinner_start: data.organization.settings.dinner_start || '19:00',
+            dinner_end: data.organization.settings.dinner_end || '21:00',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading meal timings:', error);
+    }
+  };
+
   // Load all members from all types
   useEffect(() => {
     loadAllMembers();
+    loadMealTimings();
   }, []);
 
   // Reset page when filters change
@@ -633,7 +737,7 @@ export default function MembersPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Meal Plan <span className="text-red-500">*</span></label>
-            <div className="flex flex-wrap gap-3">
+            <div className="space-y-2">
               <label className="flex items-center space-x-2">
                 <input
                   type="checkbox"
@@ -647,12 +751,15 @@ export default function MembersPage() {
                   }}
                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-sm text-gray-700 font-medium">Full Day</span>
+                <span className="text-sm text-gray-700 font-medium">Full Day (All Meals)</span>
               </label>
               {['breakfast', 'lunch', 'dinner'].map((meal) => (
-                <label key={meal} className="flex items-center space-x-2">
+                <label key={meal} className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-50">
                   <input type="checkbox" checked={formData.preferred_meal_plan?.includes(meal)} onChange={() => handleMultiSelectChange('preferred_meal_plan', meal)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-                  <span className="text-sm text-gray-700">{MEAL_PLAN_LABELS[meal]}</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                    <span className="text-sm text-gray-700 font-medium">{MEAL_PLAN_LABELS[meal]}</span>
+                    <span className="text-xs text-gray-500">({getMealTimeLabel(meal)})</span>
+                  </div>
                 </label>
               ))}
             </div>
@@ -746,7 +853,7 @@ export default function MembersPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Meal Timing Preference <span className="text-red-500">*</span></label>
-            <div className="flex flex-wrap gap-3">
+            <div className="space-y-2">
               <label className="flex items-center space-x-2">
                 <input
                   type="checkbox"
@@ -760,12 +867,15 @@ export default function MembersPage() {
                   }}
                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-sm text-gray-700 font-medium">Full Day</span>
+                <span className="text-sm text-gray-700 font-medium">Full Day (All Meals)</span>
               </label>
               {['breakfast', 'lunch', 'dinner'].map((meal) => (
-                <label key={meal} className="flex items-center space-x-2">
+                <label key={meal} className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-50">
                   <input type="checkbox" checked={formData.meal_timing_preference?.includes(meal)} onChange={() => handleMultiSelectChange('meal_timing_preference', meal)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-                  <span className="text-sm text-gray-700">{MEAL_PLAN_LABELS[meal]}</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                    <span className="text-sm text-gray-700 font-medium">{MEAL_PLAN_LABELS[meal]}</span>
+                    <span className="text-xs text-gray-500">({getMealTimeLabel(meal)})</span>
+                  </div>
                 </label>
               ))}
             </div>
@@ -829,7 +939,10 @@ export default function MembersPage() {
             <DetailRow label="Department/Program" value={member.department_program} />
             <DetailRow label="Hostel/Day Scholar" value={HOSTEL_STATUS_LABELS[member.hostel_day_scholar]} />
             <DetailRow label="Membership Type" value={MEMBERSHIP_TYPE_LABELS[member.membership_type]} badge badgeColor="bg-blue-100 text-blue-700" />
-            <DetailRow label="Meal Plan" value={member.preferred_meal_plan?.map(m => MEAL_PLAN_LABELS[m]).join(', ')} />
+            <div className="flex justify-between items-start py-2 border-b border-gray-200">
+              <span className="text-sm text-gray-500">Meal Plan</span>
+              {formatMealPlanDisplay(member.preferred_meal_plan)}
+            </div>
             <DetailRow label="Food Preference" value={FOOD_PREFERENCE_LABELS[member.food_preference]} />
           </div>
           <div className="bg-gray-50 rounded-lg p-4">
@@ -892,7 +1005,10 @@ export default function MembersPage() {
             <DetailRow label="Designation" value={member.designation} />
             <DetailRow label="Duty Shift" value={DUTY_SHIFT_LABELS[member.duty_shift]} badge badgeColor="bg-purple-100 text-purple-700" />
             <DetailRow label="Membership Type" value={MEMBERSHIP_TYPE_LABELS[member.membership_type]} badge badgeColor="bg-blue-100 text-blue-700" />
-            <DetailRow label="Meal Timing" value={member.meal_timing_preference?.map(m => MEAL_PLAN_LABELS[m]).join(', ')} />
+            <div className="flex justify-between items-start py-2 border-b border-gray-200">
+              <span className="text-sm text-gray-500">Meal Timing</span>
+              {formatMealPlanDisplay(member.meal_timing_preference)}
+            </div>
             <DetailRow label="Food Preference" value={FOOD_PREFERENCE_LABELS[member.food_preference]} />
           </div>
           <div className="bg-gray-50 rounded-lg p-4">
