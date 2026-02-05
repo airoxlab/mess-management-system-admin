@@ -533,26 +533,32 @@ export default function MembersPage() {
       if (!formData.student_cnic?.trim()) errors.student_cnic = 'CNIC is required';
       if (!formData.roll_number?.trim()) errors.roll_number = 'Roll number is required';
       if (!formData.department_program?.trim()) errors.department_program = 'Department/Program is required';
-      if (!formData.date_of_birth) errors.date_of_birth = 'Date of birth is required';
-      if (!formData.residential_address?.trim()) errors.residential_address = 'Address is required';
+      if (!formData.gender) errors.gender = 'Gender is required';
       // Contact number is required only for Male students
       if (formData.gender === 'male' && !formData.contact_number?.trim()) {
         errors.contact_number = 'Contact number is required for male students';
       }
-      if (!formData.emergency_contact_name?.trim()) errors.emergency_contact_name = 'Emergency contact name is required';
-      if (!formData.emergency_contact_number?.trim()) errors.emergency_contact_number = 'Emergency contact number is required';
-      if (!formData.preferred_meal_plan?.length) errors.preferred_meal_plan = 'Select at least one meal plan';
-      if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
-    } else if (memberType === 'faculty') {
-      if (!formData.full_name?.trim()) errors.full_name = 'Full name is required';
-      if (!formData.father_name?.trim()) errors.father_name = 'Father name is required';
-      if (!formData.cnic_no?.trim()) errors.cnic_no = 'CNIC is required';
-      if (!formData.employee_id?.trim()) errors.employee_id = 'Employee ID is required';
-      if (!formData.department?.trim()) errors.department = 'Department is required';
-      if (!formData.designation?.trim()) errors.designation = 'Designation is required';
-      if (!formData.contact_number?.trim()) errors.contact_number = 'Contact number is required';
       if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
       if (!formData.residential_address?.trim()) errors.residential_address = 'Address is required';
+      if (!formData.hostel_day_scholar) errors.hostel_day_scholar = 'Hostel/Day Scholar is required';
+      if (!formData.membership_type) errors.membership_type = 'Membership type is required';
+      if (!formData.preferred_meal_plan?.length) errors.preferred_meal_plan = 'Select at least one meal plan';
+      if (!formData.food_preference) errors.food_preference = 'Food preference is required';
+      if (!formData.emergency_contact_name?.trim()) errors.emergency_contact_name = 'Emergency contact name is required';
+      if (!formData.emergency_contact_number?.trim()) errors.emergency_contact_number = 'Emergency contact number is required';
+      if (!formData.payment_method) errors.payment_method = 'Payment method is required';
+      if (!formData.complaint_policy_acknowledged) errors.complaint_policy_acknowledged = 'You must acknowledge the complaint policy';
+    } else if (memberType === 'faculty') {
+      if (!formData.full_name?.trim()) errors.full_name = 'Full name is required';
+      if (!formData.department?.trim()) errors.department = 'Department is required';
+      if (!formData.designation?.trim()) errors.designation = 'Designation is required';
+      if (!formData.employee_id?.trim()) errors.employee_id = 'Employee ID is required';
+      if (!formData.contact_number?.trim()) errors.contact_number = 'Contact number is required';
+      if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
+      if (!formData.membership_type) errors.membership_type = 'Membership type is required';
+      if (!formData.preferred_meal_plan) errors.preferred_meal_plan = 'Preferred meal plan is required';
+      if (!formData.food_preference) errors.food_preference = 'Food preference is required';
+      if (!formData.complaint_policy_acknowledged) errors.complaint_policy_acknowledged = 'You must acknowledge the complaint policy';
     } else {
       if (!formData.full_name?.trim()) errors.full_name = 'Full name is required';
       if (!formData.father_name?.trim()) errors.father_name = 'Father name is required';
@@ -560,10 +566,15 @@ export default function MembersPage() {
       if (!formData.employee_id?.trim()) errors.employee_id = 'Employee ID is required';
       if (!formData.department_section?.trim()) errors.department_section = 'Department/Section is required';
       if (!formData.designation?.trim()) errors.designation = 'Designation is required';
+      if (!formData.duty_shift) errors.duty_shift = 'Duty shift is required';
       if (!formData.contact_number?.trim()) errors.contact_number = 'Contact number is required';
-      if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
       if (!formData.residential_address?.trim()) errors.residential_address = 'Address is required';
+      if (!formData.email_address?.trim()) errors.email_address = 'Email address is required';
+      if (!formData.membership_type) errors.membership_type = 'Membership type is required';
       if (!formData.meal_timing_preference?.length) errors.meal_timing_preference = 'Select at least one meal timing';
+      if (!formData.food_preference) errors.food_preference = 'Food preference is required';
+      if (!formData.fee_payment_method) errors.fee_payment_method = 'Fee payment method is required';
+      if (!formData.complaint_policy_acknowledged) errors.complaint_policy_acknowledged = 'You must acknowledge the complaint policy';
     }
 
     setFormErrors(errors);
@@ -716,15 +727,15 @@ export default function MembersPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Student CNIC" name="student_cnic" value={formData.student_cnic} onChange={handleFormChange} error={formErrors.student_cnic} placeholder="38101-9802589-1" maxLength={15} required />
-            <Input label="Roll Number" name="roll_number" value={formData.roll_number} onChange={handleFormChange} error={formErrors.roll_number} required disabled={addEditModal.mode === 'edit'} />
+            <Input label="Roll Number" name="roll_number" value={formData.roll_number} onChange={handleFormChange} error={formErrors.roll_number} required />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Department/Program" name="department_program" value={formData.department_program} onChange={handleFormChange} error={formErrors.department_program} required />
-            <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} error={formErrors.date_of_birth} required />
+            <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Gender" name="gender" value={formData.gender} onChange={handleFormChange} options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }]} />
-            <Select label="Hostel/Day Scholar" name="hostel_day_scholar" value={formData.hostel_day_scholar} onChange={handleFormChange} options={[{ value: 'hostel', label: 'Hostel' }, { value: 'day_scholar', label: 'Day Scholar' }]} />
+            <Select label="Gender" name="gender" value={formData.gender} onChange={handleFormChange} error={formErrors.gender} options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }]} required />
+            <Select label="Hostel/Day Scholar" name="hostel_day_scholar" value={formData.hostel_day_scholar} onChange={handleFormChange} error={formErrors.hostel_day_scholar} options={[{ value: 'hostel', label: 'Hostel' }, { value: 'day_scholar', label: 'Day Scholar' }]} required />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Contact Number" name="contact_number" type="tel" value={formData.contact_number} onChange={handleFormChange} error={formErrors.contact_number} placeholder="0300-1234567" maxLength={12} required={formData.gender === 'male'} />
@@ -732,8 +743,8 @@ export default function MembersPage() {
           </div>
           <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} error={formErrors.residential_address} rows={2} required />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }]} />
-            <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} />
+            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }]} required />
+            <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} error={formErrors.food_preference} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Meal Plan <span className="text-red-500">*</span></label>
@@ -769,7 +780,27 @@ export default function MembersPage() {
             <Input label="Emergency Contact Name" name="emergency_contact_name" value={formData.emergency_contact_name} onChange={handleFormChange} error={formErrors.emergency_contact_name} required />
             <Input label="Emergency Contact Number" name="emergency_contact_number" value={formData.emergency_contact_number} onChange={handleFormChange} error={formErrors.emergency_contact_number} placeholder="0300-1234567" maxLength={12} required />
           </div>
-          <Select label="Payment Method" name="payment_method" value={formData.payment_method} onChange={handleFormChange} options={[{ value: 'cash', label: 'Cash' }, { value: 'online', label: 'Online' }, { value: 'other', label: 'Other' }]} />
+          <Select label="Payment Method" name="payment_method" value={formData.payment_method} onChange={handleFormChange} error={formErrors.payment_method} options={[{ value: 'cash', label: 'Cash' }, { value: 'online', label: 'Online' }, { value: 'other', label: 'Other' }]} required />
+          <div>
+            <label className="flex items-start space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
+              <input
+                type="checkbox"
+                name="complaint_policy_acknowledged"
+                checked={formData.complaint_policy_acknowledged}
+                onChange={handleFormChange}
+                className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">
+                  I acknowledge the Complaint Policy <span className="text-red-500">*</span>
+                </span>
+                <p className="text-xs text-gray-500 mt-1">
+                  By checking this box, I confirm that I have read and agree to the cafeteria complaint policy.
+                </p>
+              </div>
+            </label>
+            {formErrors.complaint_policy_acknowledged && <p className="mt-1 text-sm text-red-600">{formErrors.complaint_policy_acknowledged}</p>}
+          </div>
           <div className="border-t pt-4 mt-4">
             <h4 className="font-medium text-gray-900 mb-3">Admin Section</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -788,11 +819,11 @@ export default function MembersPage() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Full Name" name="full_name" value={formData.full_name} onChange={handleFormChange} error={formErrors.full_name} required />
-            <Input label="Father Name" name="father_name" value={formData.father_name} onChange={handleFormChange} error={formErrors.father_name} required />
+            <Input label="Father Name" name="father_name" value={formData.father_name} onChange={handleFormChange} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input label="CNIC No" name="cnic_no" value={formData.cnic_no} onChange={handleFormChange} error={formErrors.cnic_no} placeholder="38101-9802589-1" maxLength={15} required disabled={addEditModal.mode === 'edit'} />
-            <Input label="Employee ID" name="employee_id" value={formData.employee_id} onChange={handleFormChange} error={formErrors.employee_id} required disabled={addEditModal.mode === 'edit'} />
+            <Input label="CNIC No" name="cnic_no" value={formData.cnic_no} onChange={handleFormChange} placeholder="38101-9802589-1" maxLength={15} />
+            <Input label="Employee ID" name="employee_id" value={formData.employee_id} onChange={handleFormChange} error={formErrors.employee_id} required />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Department" name="department" value={formData.department} onChange={handleFormChange} error={formErrors.department} required />
@@ -803,14 +834,34 @@ export default function MembersPage() {
             <Input label="Email Address" name="email_address" type="email" value={formData.email_address} onChange={handleFormChange} error={formErrors.email_address} required />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} error={formErrors.residential_address} rows={2} required />
+            <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} rows={2} />
             <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }, { value: 'day_to_day', label: 'Day to Day' }]} />
-            <Select label="Preferred Meal Plan" name="preferred_meal_plan" value={formData.preferred_meal_plan} onChange={handleFormChange} options={[{ value: 'lunch', label: 'Lunch Only' }, { value: 'dinner', label: 'Dinner Only' }, { value: 'full_day', label: 'Full Day' }]} />
+            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }, { value: 'day_to_day', label: 'Day to Day' }]} required />
+            <Select label="Preferred Meal Plan" name="preferred_meal_plan" value={formData.preferred_meal_plan} onChange={handleFormChange} error={formErrors.preferred_meal_plan} options={[{ value: 'lunch', label: 'Lunch Only' }, { value: 'dinner', label: 'Dinner Only' }, { value: 'full_day', label: 'Full Day' }]} required />
           </div>
-          <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} />
+          <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} error={formErrors.food_preference} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} required />
+          <div>
+            <label className="flex items-start space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
+              <input
+                type="checkbox"
+                name="complaint_policy_acknowledged"
+                checked={formData.complaint_policy_acknowledged}
+                onChange={handleFormChange}
+                className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">
+                  I acknowledge the Complaint Policy <span className="text-red-500">*</span>
+                </span>
+                <p className="text-xs text-gray-500 mt-1">
+                  By checking this box, I confirm that I have read and agree to the cafeteria complaint policy.
+                </p>
+              </div>
+            </label>
+            {formErrors.complaint_policy_acknowledged && <p className="mt-1 text-sm text-red-600">{formErrors.complaint_policy_acknowledged}</p>}
+          </div>
           <div className="border-t pt-4 mt-4">
             <h4 className="font-medium text-gray-900 mb-3">Admin Section</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -832,8 +883,8 @@ export default function MembersPage() {
             <Input label="Father Name" name="father_name" value={formData.father_name} onChange={handleFormChange} error={formErrors.father_name} required />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input label="CNIC No" name="cnic_no" value={formData.cnic_no} onChange={handleFormChange} error={formErrors.cnic_no} placeholder="38101-9802589-1" maxLength={15} required disabled={addEditModal.mode === 'edit'} />
-            <Input label="Employee ID" name="employee_id" value={formData.employee_id} onChange={handleFormChange} error={formErrors.employee_id} required disabled={addEditModal.mode === 'edit'} />
+            <Input label="CNIC No" name="cnic_no" value={formData.cnic_no} onChange={handleFormChange} error={formErrors.cnic_no} placeholder="38101-9802589-1" maxLength={15} required />
+            <Input label="Employee ID" name="employee_id" value={formData.employee_id} onChange={handleFormChange} error={formErrors.employee_id} required />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Department/Section" name="department_section" value={formData.department_section} onChange={handleFormChange} error={formErrors.department_section} required />
@@ -848,8 +899,8 @@ export default function MembersPage() {
             <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Duty Shift" name="duty_shift" value={formData.duty_shift} onChange={handleFormChange} options={[{ value: 'morning', label: 'Morning' }, { value: 'evening', label: 'Evening' }, { value: 'night', label: 'Night' }, { value: 'full_day', label: 'Full Day' }]} />
-            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }]} />
+            <Select label="Duty Shift" name="duty_shift" value={formData.duty_shift} onChange={handleFormChange} error={formErrors.duty_shift} options={[{ value: 'morning', label: 'Morning' }, { value: 'evening', label: 'Evening' }, { value: 'night', label: 'Night' }, { value: 'full_day', label: 'Full Day' }]} required />
+            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }]} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Meal Timing Preference <span className="text-red-500">*</span></label>
@@ -881,8 +932,28 @@ export default function MembersPage() {
             </div>
             {formErrors.meal_timing_preference && <p className="mt-1 text-sm text-red-600">{formErrors.meal_timing_preference}</p>}
           </div>
-          <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} />
-          <Select label="Fee Payment Method" name="fee_payment_method" value={formData.fee_payment_method} onChange={handleFormChange} options={[{ value: 'cash', label: 'Cash' }, { value: 'online', label: 'Online' }, { value: 'other', label: 'Other' }]} />
+          <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} error={formErrors.food_preference} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} required />
+          <Select label="Fee Payment Method" name="fee_payment_method" value={formData.fee_payment_method} onChange={handleFormChange} error={formErrors.fee_payment_method} options={[{ value: 'cash', label: 'Cash' }, { value: 'online', label: 'Online' }, { value: 'other', label: 'Other' }]} required />
+          <div>
+            <label className="flex items-start space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
+              <input
+                type="checkbox"
+                name="complaint_policy_acknowledged"
+                checked={formData.complaint_policy_acknowledged}
+                onChange={handleFormChange}
+                className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">
+                  I acknowledge the Complaint Policy <span className="text-red-500">*</span>
+                </span>
+                <p className="text-xs text-gray-500 mt-1">
+                  By checking this box, I confirm that I have read and agree to the cafeteria complaint policy.
+                </p>
+              </div>
+            </label>
+            {formErrors.complaint_policy_acknowledged && <p className="mt-1 text-sm text-red-600">{formErrors.complaint_policy_acknowledged}</p>}
+          </div>
           <div className="border-t pt-4 mt-4">
             <h4 className="font-medium text-gray-900 mb-3">Admin Section</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
