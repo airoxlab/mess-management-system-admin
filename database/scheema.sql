@@ -461,3 +461,249 @@ create table public.daily_token_counter (
 ) TABLESPACE pg_default;
 
 create index IF not exists idx_daily_counter_org_date on public.daily_token_counter using btree (organization_id, counter_date) TABLESPACE pg_default;
+
+
+
+-- ============================================
+-- NEW MEMBERSHIP PACKAGE SYSTEM TABLES
+-- ============================================
+
+-- 1. Member Packages (Enhanced package system with 4 types)
+create table public.member_packages (
+  id uuid not null default gen_random_uuid(),
+  member_id uuid not null,
+  member_type character varying(20) not null, -- student, faculty, staff
+  package_type character varying(20) not null, -- full_time, partial_full_time, partial, daily_basis
+
+  -- For full_time and partial_full_time
+  start_date date null,
+  end_date date null,
+
+  -- Meal configuration
+  breakfast_enabled boolean null default false,
+  lunch_enabled boolean null default false,
+  dinner_enabled boolean null default false,
+
+  -- Meal counts (calculated based on calendar for full_time types, fixed for partial)
+  total_breakfast integer null default 0,
+  total_lunch integer null default 0,
+  total_dinner integer null default 0,
+
+  -- Consumed counts
+  consumed_breakfast integer null default 0,
+  consumed_lunch integer null default 0,
+  consumed_dinner integer null default 0,
+
+  -- For daily_basis
+  balance numeric(10, 2) null default 0,
+  breakfast_price numeric(10, 2) null default 0,
+  lunch_price numeric(10, 2) null default 0,
+  dinner_price numeric(10, 2) null default 0,
+
+  -- Pricing
+  price numeric(10, 2) not null default 0,
+
+  -- Carry-over tracking (for partial type renewals)
+  carried_over_from_package_id uuid null,
+  carried_over_breakfast integer null default 0,
+  carried_over_lunch integer null default 0,
+  carried_over_dinner integer null default 0,
+
+  -- Per-meal disabling (for partial_full_time - stores which meals are disabled per day)
+  -- Format: { "2024-01-01": { "breakfast": true, "lunch": false, "dinner": true }, ... }
+  disabled_meals jsonb null default '{}'::jsonb,
+
+  -- Status
+  status character varying(20) null default 'active'::character varying, -- active, expired, renewed
+  is_active boolean null default true,
+
+  -- Timestamps
+  created_at timestamp with time zone null default now(),
+  updated_at timestamp with time zone null default now(),
+
+  constraint member_packages_pkey primary key (id),
+  constraint member_packages_carried_over_fkey foreign key (carried_over_from_package_id) references member_packages(id),
+  constraint member_packages_package_type_check check (
+    (
+      (package_type)::text = any (
+        (
+          array[
+            'full_time'::character varying,
+            'partial_full_time'::character varying,
+            'partial'::character varying,
+            'daily_basis'::character varying
+          ]
+        )::text[]
+      )
+    )
+  ),
+  constraint member_packages_member_type_check check (
+    (
+      (member_type)::text = any (
+        (
+          array[
+            'student'::character varying,
+            'faculty'::character varying,
+            'staff'::character varying
+          ]
+        )::text[]
+      )
+    )
+  ),
+  constraint member_packages_status_check check (
+    (
+      (status)::text = any (
+        (
+          array[
+            'active'::character varying,
+            'expired'::character varying,
+            'renewed'::character varying
+          ]
+        )::text[]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create index IF not exists idx_member_packages_member on public.member_packages using btree (member_id, member_type) TABLESPACE pg_default;
+create index IF not exists idx_member_packages_active on public.member_packages using btree (is_active) TABLESPACE pg_default;
+create index IF not exists idx_member_packages_type on public.member_packages using btree (package_type) TABLESPACE pg_default;
+create index IF not exists idx_member_packages_dates on public.member_packages using btree (start_date, end_date) TABLESPACE pg_default;
+
+create trigger update_member_packages_updated_at BEFORE
+update on member_packages for EACH row
+execute FUNCTION update_updated_at_column ();
+
+
+
+-- 2. Package Disabled Days (for partial_full_time)
+create table public.package_disabled_days (
+  id uuid not null default gen_random_uuid(),
+  package_id uuid not null,
+  disabled_date date not null,
+  created_at timestamp with time zone null default now(),
+  constraint package_disabled_days_pkey primary key (id),
+  constraint package_disabled_days_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
+  constraint package_disabled_days_unique unique (package_id, disabled_date)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_package_disabled_days_package on public.package_disabled_days using btree (package_id) TABLESPACE pg_default;
+
+
+
+-- 3. Meal Consumption History
+create table public.meal_consumption_history (
+  id uuid not null default gen_random_uuid(),
+  package_id uuid not null,
+  member_id uuid not null,
+  member_type character varying(20) not null,
+  meal_type character varying(20) not null, -- breakfast, lunch, dinner
+  consumed_at timestamp with time zone null default now(),
+
+  -- For daily_basis: track amount deducted
+  amount_deducted numeric(10, 2) null default 0,
+  balance_after numeric(10, 2) null default 0,
+
+  notes text null,
+
+  constraint meal_consumption_history_pkey primary key (id),
+  constraint meal_consumption_history_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
+  constraint meal_consumption_history_meal_type_check check (
+    (
+      (meal_type)::text = any (
+        (
+          array[
+            'breakfast'::character varying,
+            'lunch'::character varying,
+            'dinner'::character varying
+          ]
+        )::text[]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create index IF not exists idx_meal_consumption_package on public.meal_consumption_history using btree (package_id) TABLESPACE pg_default;
+create index IF not exists idx_meal_consumption_member on public.meal_consumption_history using btree (member_id, member_type) TABLESPACE pg_default;
+create index IF not exists idx_meal_consumption_date on public.meal_consumption_history using btree (consumed_at) TABLESPACE pg_default;
+
+
+
+-- 4. Package History (for tracking renewals)
+create table public.package_history (
+  id uuid not null default gen_random_uuid(),
+  member_id uuid not null,
+  member_type character varying(20) not null,
+  package_id uuid not null,
+  previous_package_id uuid null,
+  action character varying(20) not null, -- created, renewed, expired, cancelled
+
+  -- Snapshot of package at time of action
+  package_type character varying(20) null,
+  total_breakfast integer null,
+  total_lunch integer null,
+  total_dinner integer null,
+  consumed_breakfast integer null,
+  consumed_lunch integer null,
+  consumed_dinner integer null,
+  balance numeric(10, 2) null,
+
+  created_at timestamp with time zone null default now(),
+
+  constraint package_history_pkey primary key (id),
+  constraint package_history_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
+  constraint package_history_previous_fkey foreign key (previous_package_id) references member_packages(id),
+  constraint package_history_action_check check (
+    (
+      (action)::text = any (
+        (
+          array[
+            'created'::character varying,
+            'renewed'::character varying,
+            'expired'::character varying,
+            'cancelled'::character varying
+          ]
+        )::text[]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create index IF not exists idx_package_history_member on public.package_history using btree (member_id, member_type) TABLESPACE pg_default;
+create index IF not exists idx_package_history_package on public.package_history using btree (package_id) TABLESPACE pg_default;
+
+
+
+-- 5. Daily Basis Transaction History
+create table public.daily_basis_transactions (
+  id uuid not null default gen_random_uuid(),
+  package_id uuid not null,
+  member_id uuid not null,
+  transaction_type character varying(20) not null, -- deposit, meal_deduction, refund
+  amount numeric(10, 2) not null,
+  balance_before numeric(10, 2) not null,
+  balance_after numeric(10, 2) not null,
+  meal_type character varying(20) null, -- null for deposits, breakfast/lunch/dinner for deductions
+  description text null,
+  created_at timestamp with time zone null default now(),
+
+  constraint daily_basis_transactions_pkey primary key (id),
+  constraint daily_basis_transactions_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
+  constraint daily_basis_transactions_type_check check (
+    (
+      (transaction_type)::text = any (
+        (
+          array[
+            'deposit'::character varying,
+            'meal_deduction'::character varying,
+            'refund'::character varying
+          ]
+        )::text[]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create index IF not exists idx_daily_transactions_package on public.daily_basis_transactions using btree (package_id) TABLESPACE pg_default;
+create index IF not exists idx_daily_transactions_member on public.daily_basis_transactions using btree (member_id) TABLESPACE pg_default;
+create index IF not exists idx_daily_transactions_date on public.daily_basis_transactions using btree (created_at) TABLESPACE pg_default;
