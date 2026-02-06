@@ -10,6 +10,7 @@ import { formatDate, formatCurrency, formatNumber } from '@/lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import api from '@/lib/api-client';
+import { useAuth } from '@/context/AuthContext';
 
 const COLORS = {
   primary: '#10B981',
@@ -36,17 +37,61 @@ const DATE_PRESETS = [
 ];
 
 export default function ReportsPage() {
+  const { user, organization } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [datePreset, setDatePreset] = useState('month');
+  const [datePreset, setDatePreset] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('reports_date_preset') || 'today';
+    }
+    return 'today';
+  });
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportRef = useRef(null);
   const [dateRange, setDateRange] = useState(() => {
     const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    return {
-      start: startOfMonth.toISOString().split('T')[0],
-      end: today.toISOString().split('T')[0],
-    };
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('reports_date_preset') : null;
+    const preset = saved || 'today';
+
+    let start, end;
+    switch (preset) {
+      case 'yesterday': {
+        const y = new Date(today);
+        y.setDate(y.getDate() - 1);
+        start = end = y.toISOString().split('T')[0];
+        break;
+      }
+      case 'week': {
+        const ws = new Date(today);
+        ws.setDate(today.getDate() - today.getDay());
+        start = ws.toISOString().split('T')[0];
+        end = today.toISOString().split('T')[0];
+        break;
+      }
+      case 'month':
+        start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+        end = today.toISOString().split('T')[0];
+        break;
+      case 'quarter': {
+        const qm = Math.floor(today.getMonth() / 3) * 3;
+        start = new Date(today.getFullYear(), qm, 1).toISOString().split('T')[0];
+        end = today.toISOString().split('T')[0];
+        break;
+      }
+      case 'year':
+        start = new Date(today.getFullYear(), 0, 1).toISOString().split('T')[0];
+        end = today.toISOString().split('T')[0];
+        break;
+      case 'custom': {
+        const savedStart = typeof window !== 'undefined' ? localStorage.getItem('reports_custom_start') : null;
+        const savedEnd = typeof window !== 'undefined' ? localStorage.getItem('reports_custom_end') : null;
+        start = savedStart || today.toISOString().split('T')[0];
+        end = savedEnd || today.toISOString().split('T')[0];
+        break;
+      }
+      default: // 'today'
+        start = end = today.toISOString().split('T')[0];
+    }
+    return { start, end };
   });
 
   // Data states
@@ -56,6 +101,7 @@ export default function ReportsPage() {
     totalMembers: 0,
     newMembers: 0,
     activePackages: 0,
+    totalPackages: 0,
     totalMeals: 0,
     totalRevenue: 0,
     collectionRate: 0,
@@ -79,6 +125,7 @@ export default function ReportsPage() {
   // Handle date preset change
   const handlePresetChange = (preset) => {
     setDatePreset(preset);
+    localStorage.setItem('reports_date_preset', preset);
     const today = new Date();
     let start, end;
 
@@ -86,26 +133,29 @@ export default function ReportsPage() {
       case 'today':
         start = end = today.toISOString().split('T')[0];
         break;
-      case 'yesterday':
+      case 'yesterday': {
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
         start = end = yesterday.toISOString().split('T')[0];
         break;
-      case 'week':
+      }
+      case 'week': {
         const weekStart = new Date(today);
         weekStart.setDate(today.getDate() - today.getDay());
         start = weekStart.toISOString().split('T')[0];
         end = today.toISOString().split('T')[0];
         break;
+      }
       case 'month':
         start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
         end = today.toISOString().split('T')[0];
         break;
-      case 'quarter':
+      case 'quarter': {
         const quarterMonth = Math.floor(today.getMonth() / 3) * 3;
         start = new Date(today.getFullYear(), quarterMonth, 1).toISOString().split('T')[0];
         end = today.toISOString().split('T')[0];
         break;
+      }
       case 'year':
         start = new Date(today.getFullYear(), 0, 1).toISOString().split('T')[0];
         end = today.toISOString().split('T')[0];
@@ -123,26 +173,34 @@ export default function ReportsPage() {
     try {
       setLoading(true);
 
-      // Fetch all data in parallel
-      const [studentsRes, facultyRes, staffRes, packagesRes] = await Promise.all([
+      // Fetch all data in parallel (both old and v2 packages)
+      const [studentsRes, facultyRes, staffRes, packagesOldRes, packagesV2Res] = await Promise.all([
         api.get('/api/student-members'),
         api.get('/api/faculty-members'),
         api.get('/api/staff-members'),
         api.get('/api/member-packages'),
+        api.get('/api/member-packages-v2'),
       ]);
 
       const studentsData = studentsRes.ok ? await studentsRes.json() : { members: [] };
       const facultyData = facultyRes.ok ? await facultyRes.json() : { members: [] };
       const staffData = staffRes.ok ? await staffRes.json() : { members: [] };
-      const packagesData = packagesRes.ok ? await packagesRes.json() : { packages: [] };
+      const packagesOldData = packagesOldRes.ok ? await packagesOldRes.json() : { packages: [] };
+      const packagesV2Data = packagesV2Res.ok ? await packagesV2Res.json() : { packages: [] };
 
       const students = studentsData.members || [];
       const faculty = facultyData.members || [];
       const staff = staffData.members || [];
-      const pkgs = packagesData.packages || [];
-
-      setMembers({ students, faculty, staff });
-      setPackages(pkgs);
+      const oldPkgs = packagesOldData.packages || [];
+      const v2Pkgs = packagesV2Data.packages || [];
+      // Normalize v2 packages to have the same meal fields as old packages
+      const normalizedV2 = v2Pkgs.map(p => ({
+        ...p,
+        breakfast_meals_per_month: p.total_breakfast || 0,
+        lunch_meals_per_month: p.total_lunch || 0,
+        dinner_meals_per_month: p.total_dinner || 0,
+      }));
+      const pkgs = [...oldPkgs, ...normalizedV2];
 
       // Filter by date range
       const startDate = new Date(dateRange.start);
@@ -154,15 +212,18 @@ export default function ReportsPage() {
         return createdAt >= startDate && createdAt <= endDate;
       });
 
-      const newStudents = filterByDate(students);
-      const newFaculty = filterByDate(faculty);
-      const newStaff = filterByDate(staff);
-      const newPackages = filterByDate(pkgs);
+      const filteredStudents = filterByDate(students);
+      const filteredFaculty = filterByDate(faculty);
+      const filteredStaff = filterByDate(staff);
+      const filteredPkgs = filterByDate(pkgs);
 
-      // Calculate stats
-      const allMembers = [...students, ...faculty, ...staff];
-      const newMembers = [...newStudents, ...newFaculty, ...newStaff];
-      const activePackages = pkgs.filter(p => p.is_active);
+      // Set filtered data to state so charts use filtered data
+      setMembers({ students: filteredStudents, faculty: filteredFaculty, staff: filteredStaff });
+      setPackages(filteredPkgs);
+
+      // Calculate stats from filtered data
+      const allFilteredMembers = [...filteredStudents, ...filteredFaculty, ...filteredStaff];
+      const activePackages = filteredPkgs.filter(p => p.is_active);
 
       let totalMeals = 0;
       let totalRevenue = 0;
@@ -174,12 +235,15 @@ export default function ReportsPage() {
       });
 
       setStats({
-        totalMembers: allMembers.length,
-        newMembers: newMembers.length,
+        totalMembers: allFilteredMembers.length,
+        newMembers: allFilteredMembers.length,
         activePackages: activePackages.length,
+        totalPackages: filteredPkgs.length,
         totalMeals,
         totalRevenue,
-        collectionRate: activePackages.length > 0 ? 85 : 0, // Mock data
+        collectionRate: filteredPkgs.length > 0 && activePackages.length > 0
+          ? Math.round((activePackages.length / filteredPkgs.length) * 100)
+          : 0,
       });
     } catch (error) {
       console.error('Failed to load report data:', error);
@@ -246,15 +310,23 @@ export default function ReportsPage() {
     // BOM for Excel UTF-8 support
     let csv = '\uFEFF';
 
+    const orgName = organization?.name || 'Organization';
+
     // Header Section
     csv += '═══════════════════════════════════════════════════════════════════\n';
-    csv += '                    LIMHS CAFETERIA\n';
+    csv += `                    ${orgName.toUpperCase()}\n`;
     csv += '                 REPORTS & ANALYTICS\n';
     csv += '═══════════════════════════════════════════════════════════════════\n';
     csv += '\n';
-    csv += `Report Period:,${dateRange.start} to ${dateRange.end}\n`;
-    csv += `Generated On:,${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-    csv += `Generated At:,${new Date().toLocaleTimeString()}\n`;
+    if (organization?.address) csv += `Address:,"${organization.address}"\n`;
+    if (organization?.contact_phone) csv += `Phone:,${organization.contact_phone}\n`;
+    if (organization?.contact_email) csv += `Email:,${organization.contact_email}\n`;
+    csv += `Report Period:,"${dateRange.start} to ${dateRange.end}"\n`;
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    csv += `Generated On:,"${dateStr} at ${timeStr}"\n`;
+    if (user?.full_name) csv += `Generated By:,"${user.full_name}"\n`;
     csv += '\n';
 
     // Executive Summary
@@ -343,8 +415,9 @@ export default function ReportsPage() {
     csv += '                         END OF REPORT\n';
     csv += '═══════════════════════════════════════════════════════════════════\n';
     csv += '\n';
-    csv += 'This report was automatically generated by LIMHS Cafeteria Meal Token System.\n';
-    csv += 'For any queries please contact the system administrator.\n';
+    csv += `This report was automatically generated by ${orgName} - Cafeteria Meal Token System.\n`;
+    if (organization?.support_phone) csv += `For any queries please contact: ${organization.support_phone}\n`;
+    else csv += 'For any queries please contact the system administrator.\n';
 
     return csv;
   };
@@ -366,7 +439,8 @@ export default function ReportsPage() {
   const exportCSV = () => {
     const csv = generateCSV();
     const today = new Date().toISOString().split('T')[0];
-    const filename = `LIMHS_Cafeteria_Report_${today}.csv`;
+    const orgSlug = (organization?.name || 'Report').replace(/\s+/g, '_');
+    const filename = `${orgSlug}_Report_${today}.csv`;
     downloadFile(csv, filename, 'text/csv;charset=utf-8;');
     toast.success('Report exported successfully');
   };
@@ -375,26 +449,36 @@ export default function ReportsPage() {
   const exportPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
+    const orgName = organization?.name || 'Organization';
     const allMembers = [...members.students, ...members.faculty, ...members.staff]
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 20);
 
     // Header
     doc.setFillColor(16, 185, 129); // Primary green
-    doc.rect(0, 0, pageWidth, 35, 'F');
+    doc.rect(0, 0, pageWidth, 42, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
-    doc.text('LIMHS CAFETERIA', pageWidth / 2, 15, { align: 'center' });
+    doc.text(orgName.toUpperCase(), pageWidth / 2, 13, { align: 'center' });
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
-    doc.text('Reports & Analytics', pageWidth / 2, 23, { align: 'center' });
+    doc.text('Reports & Analytics', pageWidth / 2, 21, { align: 'center' });
+    doc.setFontSize(8);
+    const orgDetails = [organization?.address, organization?.contact_phone, organization?.contact_email].filter(Boolean).join(' | ');
+    if (orgDetails) {
+      doc.text(orgDetails, pageWidth / 2, 28, { align: 'center' });
+    }
     doc.setFontSize(9);
-    doc.text(`Period: ${dateRange.start} to ${dateRange.end} | Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 30, { align: 'center' });
+    doc.text(`Period: ${dateRange.start} to ${dateRange.end} | Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 35, { align: 'center' });
+    if (user?.full_name) {
+      doc.setFontSize(8);
+      doc.text(`Generated by: ${user.full_name}`, pageWidth / 2, 40, { align: 'center' });
+    }
 
     // Reset text color
     doc.setTextColor(0, 0, 0);
-    let yPos = 45;
+    let yPos = 50;
 
     // Summary Statistics Section
     doc.setFontSize(14);
@@ -526,7 +610,7 @@ export default function ReportsPage() {
       doc.setFontSize(8);
       doc.setTextColor(156, 163, 175);
       doc.text(
-        'LIMHS Cafeteria Meal Token System - Report generated automatically',
+        `${orgName} - Cafeteria Meal Token System`,
         pageWidth / 2,
         doc.internal.pageSize.getHeight() - 10,
         { align: 'center' }
@@ -540,7 +624,8 @@ export default function ReportsPage() {
     }
 
     // Save PDF
-    const filename = `LIMHS_Report_${dateRange.start}_to_${dateRange.end}.pdf`;
+    const orgSlug = (orgName).replace(/\s+/g, '_');
+    const filename = `${orgSlug}_Report_${dateRange.start}_to_${dateRange.end}.pdf`;
     doc.save(filename);
     toast.success('Report exported as PDF');
   };
@@ -631,30 +716,34 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          {/* Custom Date Range */}
-          <div className="flex items-center gap-2 ml-auto">
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => {
-                  setDatePreset('custom');
-                  setDateRange(prev => ({ ...prev, start: e.target.value }));
-                }}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-              />
-              <span className="text-gray-400">to</span>
-              <input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => {
-                  setDatePreset('custom');
-                  setDateRange(prev => ({ ...prev, end: e.target.value }));
-                }}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-              />
+          {/* Custom Date Range - only shown when Custom is selected */}
+          {datePreset === 'custom' && (
+            <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) => {
+                    const newStart = e.target.value;
+                    localStorage.setItem('reports_custom_start', newStart);
+                    setDateRange(prev => ({ ...prev, start: newStart }));
+                  }}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                />
+                <span className="text-gray-400">to</span>
+                <input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) => {
+                    const newEnd = e.target.value;
+                    localStorage.setItem('reports_custom_end', newEnd);
+                    setDateRange(prev => ({ ...prev, end: newEnd }));
+                  }}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -672,15 +761,15 @@ export default function ReportsPage() {
             <StatCard
               title="Total Members"
               value={stats.totalMembers}
-              change={`+${stats.newMembers} new`}
-              changeType="positive"
+              change="In selected period"
+              changeType="neutral"
               icon={<UsersIcon />}
               color="blue"
             />
             <StatCard
               title="Active Packages"
               value={stats.activePackages}
-              change={`${packages.length} total`}
+              change={`${stats.totalPackages} total`}
               changeType="neutral"
               icon={<PackageIcon />}
               color="green"
@@ -696,8 +785,8 @@ export default function ReportsPage() {
             <StatCard
               title="Revenue"
               value={formatCurrency(stats.totalRevenue)}
-              change={`${stats.collectionRate}% collected`}
-              changeType="positive"
+              change={`${stats.collectionRate}% active`}
+              changeType={stats.collectionRate > 50 ? "positive" : "neutral"}
               icon={<RevenueIcon />}
               color="amber"
             />
@@ -807,7 +896,7 @@ export default function ReportsPage() {
             <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-gray-900">Package Status</h3>
-                <span className="text-xs text-gray-500">{packages.length} packages</span>
+                <span className="text-xs text-gray-500">{stats.totalPackages} packages</span>
               </div>
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%" debounce={50}>

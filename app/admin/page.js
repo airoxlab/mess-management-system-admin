@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { formatNumber, formatCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 import api from '@/lib/api-client';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 const COLORS = {
   student: '#3B82F6',
@@ -28,66 +30,171 @@ const GRADIENTS = {
   rose: 'from-rose-500 to-rose-600',
 };
 
+// Helper to compute date range from a preset
+function getDateRange(preset, customStart, customEnd) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let start, end;
+
+  switch (preset) {
+    case 'today':
+      start = today;
+      end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'yesterday': {
+      start = new Date(today);
+      start.setDate(start.getDate() - 1);
+      end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+      break;
+    }
+    case 'this_week': {
+      const day = today.getDay();
+      start = new Date(today);
+      start.setDate(start.getDate() - (day === 0 ? 6 : day - 1)); // Monday
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    }
+    case 'previous_week': {
+      const day = today.getDay();
+      const thisMonday = new Date(today);
+      thisMonday.setDate(thisMonday.getDate() - (day === 0 ? 6 : day - 1));
+      start = new Date(thisMonday);
+      start.setDate(start.getDate() - 7);
+      end = new Date(thisMonday);
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      break;
+    }
+    case 'this_month':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'custom':
+      start = customStart ? new Date(customStart + 'T00:00:00') : today;
+      end = customEnd ? new Date(customEnd + 'T23:59:59.999') : new Date(today.getTime());
+      end.setHours(23, 59, 59, 999);
+      break;
+    default:
+      start = today;
+      end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+  }
+  return { start, end };
+}
+
+function filterByDate(items, startDate, endDate) {
+  return items.filter(item => {
+    const created = new Date(item.created_at);
+    return created >= startDate && created <= endDate;
+  });
+}
+
 export default function AdminDashboard() {
+  const { user, organization } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState('today');
+  const [dateFilter, setDateFilter] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('dashboard_date_filter') || 'today';
+    }
+    return 'today';
+  });
+  const [customStartDate, setCustomStartDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('dashboard_custom_start') || '';
+    }
+    return '';
+  });
+  const [customEndDate, setCustomEndDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('dashboard_custom_end') || '';
+    }
+    return '';
+  });
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isLive, setIsLive] = useState(false);
+  const refreshTimeoutRef = useRef(null);
+  const channelRef = useRef(null);
 
   // Data states
   const [members, setMembers] = useState({ students: [], faculty: [], staff: [] });
   const [packages, setPackages] = useState([]);
+  const [menuCategories, setMenuCategories] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
   const [stats, setStats] = useState({
     totalMembers: 0,
     activeMembers: 0,
     pendingMembers: 0,
     totalPackages: 0,
     activePackages: 0,
-    totalMealsPerMonth: 0,
     totalRevenue: 0,
+    totalMenuCategories: 0,
+    totalMenuItems: 0,
+    availableMenuItems: 0,
   });
 
-  useEffect(() => {
-    loadDashboardData();
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async (showLoader = true) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
 
-      const [studentsRes, facultyRes, staffRes, packagesRes] = await Promise.all([
+      const [studentsRes, facultyRes, staffRes, packagesOldRes, packagesV2Res, categoriesRes, itemsRes] = await Promise.all([
         api.get('/api/student-members'),
         api.get('/api/faculty-members'),
         api.get('/api/staff-members'),
         api.get('/api/member-packages'),
+        api.get('/api/member-packages-v2'),
+        api.get('/api/menu-categories'),
+        api.get('/api/menu-items'),
       ]);
 
       const studentsData = studentsRes.ok ? await studentsRes.json() : { members: [] };
       const facultyData = facultyRes.ok ? await facultyRes.json() : { members: [] };
       const staffData = staffRes.ok ? await staffRes.json() : { members: [] };
-      const packagesData = packagesRes.ok ? await packagesRes.json() : { packages: [] };
+      const packagesOldData = packagesOldRes.ok ? await packagesOldRes.json() : { packages: [] };
+      const packagesV2Data = packagesV2Res.ok ? await packagesV2Res.json() : { packages: [] };
+      const categoriesData = categoriesRes.ok ? await categoriesRes.json() : { categories: [] };
+      const itemsData = itemsRes.ok ? await itemsRes.json() : { items: [] };
 
-      const students = studentsData.members || [];
-      const faculty = facultyData.members || [];
-      const staff = staffData.members || [];
-      const pkgs = packagesData.packages || [];
+      const allStudents = studentsData.members || [];
+      const allFaculty = facultyData.members || [];
+      const allStaff = staffData.members || [];
+      const oldPkgs = packagesOldData.packages || [];
+      const v2Pkgs = packagesV2Data.packages || [];
+      const normalizedV2 = v2Pkgs.map(p => ({
+        ...p,
+        breakfast_meals_per_month: p.total_breakfast || 0,
+        lunch_meals_per_month: p.total_lunch || 0,
+        dinner_meals_per_month: p.total_dinner || 0,
+      }));
+      const allPkgs = [...oldPkgs, ...normalizedV2];
+      const categories = categoriesData.categories || [];
+      const items = itemsData.items || [];
+
+      // Apply date filter
+      const { start, end } = getDateRange(dateFilter, customStartDate, customEndDate);
+      const students = filterByDate(allStudents, start, end);
+      const faculty = filterByDate(allFaculty, start, end);
+      const staff = filterByDate(allStaff, start, end);
+      const pkgs = filterByDate(allPkgs, start, end);
+      const filteredItems = filterByDate(items, start, end);
+      const filteredCategories = filterByDate(categories, start, end);
 
       setMembers({ students, faculty, staff });
       setPackages(pkgs);
+      setMenuCategories(filteredCategories);
+      setMenuItems(filteredItems);
 
       const allMembers = [...students, ...faculty, ...staff];
       const activeMembers = allMembers.filter(m => m.status === 'approved').length;
       const pendingMembers = allMembers.filter(m => m.status === 'pending').length;
       const activePackages = pkgs.filter(p => p.is_active).length;
 
-      let totalMeals = 0;
       let totalRevenue = 0;
       pkgs.forEach(pkg => {
         if (pkg.is_active) {
-          if (pkg.breakfast_enabled) totalMeals += parseInt(pkg.breakfast_meals_per_month) || 0;
-          if (pkg.lunch_enabled) totalMeals += parseInt(pkg.lunch_meals_per_month) || 0;
-          if (pkg.dinner_enabled) totalMeals += parseInt(pkg.dinner_meals_per_month) || 0;
           totalRevenue += parseFloat(pkg.price) || 0;
         }
       });
@@ -98,15 +205,56 @@ export default function AdminDashboard() {
         pendingMembers,
         totalPackages: pkgs.length,
         activePackages,
-        totalMealsPerMonth: totalMeals,
         totalRevenue,
+        totalMenuCategories: filteredCategories.length,
+        totalMenuItems: filteredItems.length,
+        availableMenuItems: filteredItems.filter(i => i.is_available).length,
       });
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateFilter, customStartDate, customEndDate]);
+
+  // Debounced refresh for real-time events (avoids excessive API calls)
+  const debouncedRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    refreshTimeoutRef.current = setTimeout(() => {
+      loadDashboardData(false); // silent refresh, no loading spinner
+    }, 1000);
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    loadDashboardData();
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+
+    // Set up Supabase real-time subscriptions for live data
+    const orgId = organization?.id;
+    if (orgId) {
+      const channel = supabase
+        .channel('dashboard-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'student_members', filter: `organization_id=eq.${orgId}` }, debouncedRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'faculty_members', filter: `organization_id=eq.${orgId}` }, debouncedRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_members', filter: `organization_id=eq.${orgId}` }, debouncedRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'member_meal_packages', filter: `organization_id=eq.${orgId}` }, debouncedRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_categories', filter: `organization_id=eq.${orgId}` }, debouncedRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items', filter: `organization_id=eq.${orgId}` }, debouncedRefresh)
+        .subscribe((status) => {
+          setIsLive(status === 'SUBSCRIBED');
+        });
+
+      channelRef.current = channel;
+    }
+
+    return () => {
+      clearInterval(timer);
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+    };
+  }, [organization?.id, loadDashboardData, debouncedRefresh]);
 
   // Prepare chart data
   const memberDistributionData = [
@@ -193,8 +341,16 @@ export default function AdminDashboard() {
             {/* Left: Title */}
             <div className="flex items-center gap-4">
               <div>
-                <h1 className="text-lg sm:text-xl font-bold text-slate-900">Dashboard</h1>
-                <p className="text-emerald-600 text-xs">{greeting()}</p>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg sm:text-xl font-bold text-slate-900">Dashboard</h1>
+                  {isLive && (
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full">
+                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                      <span className="text-[10px] font-semibold text-emerald-700">LIVE</span>
+                    </span>
+                  )}
+                </div>
+                <p className="text-emerald-600 text-xs">{greeting()}{organization?.name ? `, ${organization.name}` : ''}</p>
               </div>
             </div>
 
@@ -207,24 +363,45 @@ export default function AdminDashboard() {
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               <select
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDateFilter(val);
+                  localStorage.setItem('dashboard_date_filter', val);
+                }}
                 className="px-3 py-2 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
               >
                 <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-                <option value="year">This Year</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="this_week">This Week</option>
+                <option value="previous_week">Previous Week</option>
+                <option value="this_month">This Month</option>
+                <option value="custom">Custom Range</option>
               </select>
-              <button
-                onClick={loadDashboardData}
-                className="p-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-all active:scale-95 text-slate-600"
-                title="Refresh"
-              >
-                <RefreshIcon className="w-4 h-4" />
-              </button>
+              {dateFilter === 'custom' && (
+                <>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => {
+                      setCustomStartDate(e.target.value);
+                      localStorage.setItem('dashboard_custom_start', e.target.value);
+                    }}
+                    className="px-2 py-2 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                  />
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => {
+                      setCustomEndDate(e.target.value);
+                      localStorage.setItem('dashboard_custom_end', e.target.value);
+                    }}
+                    className="px-2 py-2 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                  />
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -240,7 +417,7 @@ export default function AdminDashboard() {
       ) : (
         <div className="px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
             <StatCard
               title="Total Members"
               value={stats.totalMembers}
@@ -257,11 +434,12 @@ export default function AdminDashboard() {
               gradient={GRADIENTS.green}
             />
             <StatCard
-              title="Monthly Meals"
-              value={formatNumber(stats.totalMealsPerMonth)}
-              subtitle="Meals per month"
-              icon={<MealIcon />}
-              gradient={GRADIENTS.purple}
+              title="Menu Items"
+              value={stats.totalMenuItems}
+              subtitle={`${stats.availableMenuItems} available`}
+              icon={<MenuIcon />}
+              gradient={GRADIENTS.rose}
+              trend={stats.totalMenuCategories > 0 ? { value: stats.totalMenuCategories, label: 'categories', type: 'success' } : null}
             />
             <StatCard
               title="Total Revenue"
@@ -275,12 +453,12 @@ export default function AdminDashboard() {
           {/* Charts Row 1 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             <ChartCard title="Member Distribution" subtitle="By member type" badge={`${stats.totalMembers} Total`}>
-              <div className="h-56 relative">
+              <div className="h-48 sm:h-56 relative">
                 {/* Center Label */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                   <div className="text-center">
-                    <p className="text-3xl font-black text-slate-900">{stats.totalMembers}</p>
-                    <p className="text-xs text-slate-500 font-medium">Members</p>
+                    <p className="text-2xl sm:text-3xl font-black text-slate-900">{stats.totalMembers}</p>
+                    <p className="text-[10px] sm:text-xs text-slate-500 font-medium">Members</p>
                   </div>
                 </div>
                 <ResponsiveContainer width="100%" height="100%">
@@ -326,18 +504,18 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </div>
               {/* Detailed Legend */}
-              <div className="grid grid-cols-3 gap-2 mt-4">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-4">
                 {memberDistributionData.map((item, i) => {
                   const percentage = stats.totalMembers > 0 ? ((item.value / stats.totalMembers) * 100).toFixed(0) : 0;
                   return (
-                    <div key={i} className="bg-slate-50 rounded-xl p-3 hover:bg-slate-100 transition-colors">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
-                        <span className="text-xs font-medium text-slate-600">{item.name}</span>
+                    <div key={i} className="bg-slate-50 rounded-xl p-2 sm:p-3 hover:bg-slate-100 transition-colors">
+                      <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
+                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></div>
+                        <span className="text-[10px] sm:text-xs font-medium text-slate-600 truncate">{item.name}</span>
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-xl font-bold text-slate-900">{item.value}</span>
-                        <span className="text-xs text-slate-400">({percentage}%)</span>
+                        <span className="text-lg sm:text-xl font-bold text-slate-900">{item.value}</span>
+                        <span className="text-[10px] sm:text-xs text-slate-400">({percentage}%)</span>
                       </div>
                     </div>
                   );
@@ -346,12 +524,12 @@ export default function AdminDashboard() {
             </ChartCard>
 
             <ChartCard title="Member Status" subtitle="Approval overview" badge={stats.activeMembers > 0 ? `${((stats.activeMembers / stats.totalMembers) * 100).toFixed(0)}% Approved` : '0%'}>
-              <div className="h-56 relative">
+              <div className="h-48 sm:h-56 relative">
                 {/* Center Label */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                   <div className="text-center">
-                    <p className="text-3xl font-black text-emerald-600">{stats.activeMembers}</p>
-                    <p className="text-xs text-slate-500 font-medium">Approved</p>
+                    <p className="text-2xl sm:text-3xl font-black text-emerald-600">{stats.activeMembers}</p>
+                    <p className="text-[10px] sm:text-xs text-slate-500 font-medium">Approved</p>
                   </div>
                 </div>
                 <ResponsiveContainer width="100%" height="100%">
@@ -391,7 +569,7 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </div>
               {/* Detailed Legend */}
-              <div className="grid grid-cols-3 gap-2 mt-4">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-4">
                 {[
                   { name: 'Approved', value: stats.activeMembers, color: COLORS.approved },
                   { name: 'Pending', value: stats.pendingMembers, color: COLORS.pending },
@@ -399,14 +577,14 @@ export default function AdminDashboard() {
                 ].map((item, i) => {
                   const percentage = stats.totalMembers > 0 ? ((item.value / stats.totalMembers) * 100).toFixed(0) : 0;
                   return (
-                    <div key={i} className="bg-slate-50 rounded-xl p-3 hover:bg-slate-100 transition-colors">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
-                        <span className="text-xs font-medium text-slate-600">{item.name}</span>
+                    <div key={i} className="bg-slate-50 rounded-xl p-2 sm:p-3 hover:bg-slate-100 transition-colors">
+                      <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
+                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></div>
+                        <span className="text-[10px] sm:text-xs font-medium text-slate-600 truncate">{item.name}</span>
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-xl font-bold text-slate-900">{item.value}</span>
-                        <span className="text-xs text-slate-400">({percentage}%)</span>
+                        <span className="text-lg sm:text-xl font-bold text-slate-900">{item.value}</span>
+                        <span className="text-[10px] sm:text-xs text-slate-400">({percentage}%)</span>
                       </div>
                     </div>
                   );
@@ -417,18 +595,18 @@ export default function AdminDashboard() {
 
           {/* Charts Row 2 */}
           <div className={`grid grid-cols-1 ${stats.totalPackages > 0 ? 'lg:grid-cols-2' : ''} gap-4 sm:gap-6`}>
-            <ChartCard title="Meal Distribution" subtitle="Packages and meals by type" badge={`${stats.totalMealsPerMonth} Meals/Day`}>
+            <ChartCard title="Meal Distribution" subtitle="Packages and meals by type" badge={`${stats.activePackages} Active`}>
               {/* Summary Stats */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
                 {mealTypeData.map((item, i) => {
                   const icons = ['🌅', '☀️', '🌙'];
                   const colors = ['from-amber-400 to-orange-500', 'from-orange-400 to-red-500', 'from-indigo-400 to-purple-500'];
                   return (
-                    <div key={i} className={`relative overflow-hidden bg-gradient-to-br ${colors[i]} rounded-xl p-3 text-white`}>
-                      <span className="absolute -right-2 -top-2 text-3xl opacity-30">{icons[i]}</span>
-                      <p className="text-xs opacity-90">{item.name}</p>
-                      <p className="text-xl font-bold">{item.meals}</p>
-                      <p className="text-[10px] opacity-75">{item.packages} packages</p>
+                    <div key={i} className={`relative overflow-hidden bg-gradient-to-br ${colors[i]} rounded-xl p-2 sm:p-3 text-white`}>
+                      <span className="absolute -right-2 -top-2 text-2xl sm:text-3xl opacity-30">{icons[i]}</span>
+                      <p className="text-[10px] sm:text-xs opacity-90">{item.name}</p>
+                      <p className="text-lg sm:text-xl font-bold">{item.meals}</p>
+                      <p className="text-[9px] sm:text-[10px] opacity-75">{item.packages} packages</p>
                     </div>
                   );
                 })}
@@ -525,18 +703,18 @@ export default function AdminDashboard() {
                   </ResponsiveContainer>
                 </div>
                 {/* Detailed Legend */}
-                <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-3">
                   {packagesByTypeData.map((item, i) => {
                     const percentage = stats.totalPackages > 0 ? ((item.value / stats.totalPackages) * 100).toFixed(0) : 0;
                     return (
-                      <div key={i} className="bg-slate-50 rounded-xl p-3 hover:bg-slate-100 transition-colors text-center">
-                        <div className="flex items-center justify-center gap-2 mb-1">
-                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
-                          <span className="text-xs font-medium text-slate-600">{item.name}</span>
+                      <div key={i} className="bg-slate-50 rounded-xl p-2 sm:p-3 hover:bg-slate-100 transition-colors text-center">
+                        <div className="flex items-center justify-center gap-1.5 sm:gap-2 mb-1">
+                          <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></div>
+                          <span className="text-[10px] sm:text-xs font-medium text-slate-600">{item.name}</span>
                         </div>
                         <div className="flex items-baseline justify-center gap-1">
-                          <span className="text-lg font-bold text-slate-900">{item.value}</span>
-                          <span className="text-xs text-slate-400">({percentage}%)</span>
+                          <span className="text-base sm:text-lg font-bold text-slate-900">{item.value}</span>
+                          <span className="text-[10px] sm:text-xs text-slate-400">({percentage}%)</span>
                         </div>
                       </div>
                     );
@@ -549,25 +727,26 @@ export default function AdminDashboard() {
           {/* Quick Actions & Recent Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Quick Actions */}
-            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-200/50 p-6">
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="text-lg font-semibold text-slate-900">Quick Actions</h3>
+            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-200/50 p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4 sm:mb-5">
+                <h3 className="text-base sm:text-lg font-semibold text-slate-900">Quick Actions</h3>
                 <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">Shortcuts</span>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 <QuickActionButton href="/admin/members" icon={<UsersIcon />} title="Manage Members" subtitle="View all members" gradient="from-blue-500 to-blue-600" />
                 <QuickActionButton href="/admin/packages" icon={<PackageIcon />} title="Manage Packages" subtitle="Edit meal packages" gradient="from-emerald-500 to-emerald-600" />
+                <QuickActionButton href="/admin/menus" icon={<MenuIcon />} title="Manage Menu" subtitle="Categories & items" gradient="from-rose-500 to-rose-600" />
                 <QuickActionButton href="/admin/reports" icon={<ReportIcon />} title="View Reports" subtitle="Analytics & reports" gradient="from-violet-500 to-violet-600" />
                 <QuickActionButton href="/admin/settings" icon={<SettingsIcon />} title="Settings" subtitle="System preferences" gradient="from-slate-500 to-slate-600" />
               </div>
             </div>
 
             {/* Recent Members */}
-            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-200/50 p-6">
-              <div className="flex items-center justify-between mb-5">
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-200/50 p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4 sm:mb-5">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Recent Members</h3>
-                  <p className="text-sm text-slate-500 mt-0.5">Latest registrations</p>
+                  <h3 className="text-base sm:text-lg font-semibold text-slate-900">Recent Members</h3>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Latest registrations</p>
                 </div>
                 <Link href="/admin/members" className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1 transition-colors">
                   View All
@@ -746,14 +925,14 @@ function QuickActionButton({ href, icon, title, subtitle, gradient }) {
   return (
     <Link
       href={href}
-      className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-slate-200 transition-all hover:shadow-sm group bg-slate-50/50 hover:bg-white"
+      className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-slate-100 hover:border-slate-200 transition-all hover:shadow-sm group bg-slate-50/50 hover:bg-white"
     >
-      <div className={`p-3 rounded-xl bg-gradient-to-br ${gradient} text-white shadow-sm group-hover:scale-105 transition-transform`}>
+      <div className={`p-2.5 sm:p-3 rounded-xl bg-gradient-to-br ${gradient} text-white shadow-sm group-hover:scale-105 transition-transform`}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-slate-900 text-sm">{title}</p>
-        <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+        <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5">{subtitle}</p>
       </div>
       <svg className="w-5 h-5 text-slate-300 group-hover:text-slate-400 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -848,6 +1027,14 @@ function StaffIcon({ className = "w-5 h-5" }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z" />
+    </svg>
+  );
+}
+
+function MenuIcon({ className = "w-5 h-5 sm:w-6 sm:h-6" }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
     </svg>
   );
 }

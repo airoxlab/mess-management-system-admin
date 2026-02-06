@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx next lint --file app/admin/page.js)",
+      "Bash(npm run dev:*)"
     ]
   }
 }
