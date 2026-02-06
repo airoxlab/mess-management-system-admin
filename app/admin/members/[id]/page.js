@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { PhotoUpload } from '@/components/ui/PhotoUpload';
 import { MEMBER_STATUS, MEMBER_TYPES, MEMBER_TYPE_LABELS } from '@/lib/constants';
+import api from '@/lib/api-client';
 
 export default function EditMemberPage() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function EditMemberPage() {
   const loadMember = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/members/${params.id}`);
+      const response = await api.get(`/api/members/${params.id}`);
 
       if (!response.ok) {
         throw new Error('Member not found');
@@ -94,11 +95,7 @@ export default function EditMemberPage() {
     try {
       setSaving(true);
 
-      const response = await fetch(`/api/members/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+      const response = await api.put(`/api/members/${params.id}`, formData);
 
       const data = await response.json();
 

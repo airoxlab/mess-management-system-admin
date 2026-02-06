@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // POST add deposit to daily_basis package
 export async function POST(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = params;
     const body = await request.json();
     const { amount, description } = body;
@@ -17,6 +21,7 @@ export async function POST(request, { params }) {
       .from('member_packages')
       .select('*')
       .eq('id', id)
+      .eq('organization_id', orgId)
       .single();
 
     if (fetchError) throw fetchError;
@@ -54,6 +59,7 @@ export async function POST(request, { params }) {
       balance_before: pkg.balance || 0,
       balance_after: newBalance,
       description: description || 'Deposit',
+      organization_id: orgId,
     }]);
 
     // Get updated package

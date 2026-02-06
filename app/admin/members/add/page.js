@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { PhotoUpload } from '@/components/ui/PhotoUpload';
 import { MEMBER_STATUS, MEMBER_TYPES, MEMBER_TYPE_LABELS } from '@/lib/constants';
+import api from '@/lib/api-client';
 
 export default function AddMemberPage() {
   const router = useRouter();
@@ -62,11 +63,7 @@ export default function AddMemberPage() {
     try {
       setLoading(true);
 
-      const response = await fetch('/api/members', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+      const response = await api.post('/api/members', formData);
 
       const data = await response.json();
 

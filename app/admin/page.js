@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { formatNumber, formatCurrency } from '@/lib/utils';
+import api from '@/lib/api-client';
 
 const COLORS = {
   student: '#3B82F6',
@@ -56,10 +57,10 @@ export default function AdminDashboard() {
       setLoading(true);
 
       const [studentsRes, facultyRes, staffRes, packagesRes] = await Promise.all([
-        fetch('/api/student-members'),
-        fetch('/api/faculty-members'),
-        fetch('/api/staff-members'),
-        fetch('/api/member-packages'),
+        api.get('/api/student-members'),
+        api.get('/api/faculty-members'),
+        api.get('/api/staff-members'),
+        api.get('/api/member-packages'),
       ]);
 
       const studentsData = studentsRes.ok ? await studentsRes.json() : { members: [] };

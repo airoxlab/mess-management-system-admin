@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import api, { apiClient } from '@/lib/api-client';
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -38,8 +39,7 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       // Add timestamp to bust cache and use proper headers
-      const response = await fetch(`/api/organization?t=${Date.now()}`, {
-        method: 'GET',
+      const response = await api.get(`/api/organization?t=${Date.now()}`, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -124,10 +124,7 @@ export default function SettingsPage() {
         formData.append('oldUrl', settings.logo_url);
       }
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await api.upload('/api/upload', formData);
 
       // Handle empty or invalid JSON responses
       const text = await response.text();
@@ -147,11 +144,7 @@ export default function SettingsPage() {
       setSettings((prev) => ({ ...prev, logo_url: newLogoUrl }));
 
       // Auto-save only logo_url to database
-      const saveResponse = await fetch('/api/organization', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ logo_url: newLogoUrl }),
-      });
+      const saveResponse = await api.put('/api/organization', { logo_url: newLogoUrl });
 
       if (!saveResponse.ok) {
         const errorText = await saveResponse.text();
@@ -177,11 +170,7 @@ export default function SettingsPage() {
     try {
       // Delete from storage if URL exists
       if (settings.logo_url) {
-        const deleteResponse = await fetch('/api/upload/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: settings.logo_url }),
-        });
+        const deleteResponse = await api.post('/api/upload/delete', { url: settings.logo_url });
         // Ignore delete errors - logo might already be gone
         if (!deleteResponse.ok) {
           console.warn('Failed to delete logo from storage');
@@ -192,11 +181,7 @@ export default function SettingsPage() {
       setSettings((prev) => ({ ...prev, logo_url: null }));
 
       // Auto-save only logo_url to database
-      const saveResponse = await fetch('/api/organization', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ logo_url: null }),
-      });
+      const saveResponse = await api.put('/api/organization', { logo_url: null });
 
       if (!saveResponse.ok) {
         throw new Error('Failed to save changes');
@@ -227,13 +212,9 @@ export default function SettingsPage() {
         dinner_end: settings.dinner_end,
       };
 
-      const response = await fetch('/api/organization', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...settings,
-          settings: mealTimings,
-        }),
+      const response = await api.put('/api/organization', {
+        ...settings,
+        settings: mealTimings,
       });
 
       // Handle empty or invalid JSON responses

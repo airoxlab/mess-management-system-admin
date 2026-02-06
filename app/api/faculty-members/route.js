@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // Helper function to sanitize data - convert empty strings to null for numeric and date fields
 const sanitizeData = (data) => {
@@ -23,6 +24,9 @@ const sanitizeData = (data) => {
 // GET all faculty members
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const search = searchParams.get('search');
@@ -30,6 +34,7 @@ export async function GET(request) {
     let query = supabase
       .from('faculty_members')
       .select('*')
+      .eq('organization_id', orgId)
       .order('created_at', { ascending: false });
 
     if (status && status !== 'all') {
@@ -54,6 +59,9 @@ export async function GET(request) {
 // POST create new faculty member
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
 
     // Validate required fields
@@ -80,6 +88,7 @@ export async function POST(request) {
 
     // Sanitize data before inserting
     const sanitizedBody = sanitizeData(body);
+    sanitizedBody.organization_id = orgId;
 
     const { data, error } = await supabase
       .from('faculty_members')

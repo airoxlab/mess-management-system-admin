@@ -9,6 +9,7 @@ import {
 import { formatDate, formatCurrency, formatNumber } from '@/lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import api from '@/lib/api-client';
 
 const COLORS = {
   primary: '#10B981',
@@ -124,10 +125,10 @@ export default function ReportsPage() {
 
       // Fetch all data in parallel
       const [studentsRes, facultyRes, staffRes, packagesRes] = await Promise.all([
-        fetch('/api/student-members'),
-        fetch('/api/faculty-members'),
-        fetch('/api/staff-members'),
-        fetch('/api/member-packages'),
+        api.get('/api/student-members'),
+        api.get('/api/faculty-members'),
+        api.get('/api/staff-members'),
+        api.get('/api/member-packages'),
       ]);
 
       const studentsData = studentsRes.ok ? await studentsRes.json() : { members: [] };

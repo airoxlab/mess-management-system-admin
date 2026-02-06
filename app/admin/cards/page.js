@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { MemberCard } from '@/components/Cards/MemberCard';
 import { MemberCardPrint } from '@/components/Cards/MemberCardPrint';
+import api from '@/lib/api-client';
 
 export default function CardsPage() {
   const [members, setMembers] = useState([]);
@@ -31,8 +32,8 @@ export default function CardsPage() {
 
       // Load members and organization in parallel
       const [membersRes, orgRes] = await Promise.all([
-        fetch('/api/members'),
-        fetch('/api/organization'),
+        api.get('/api/members'),
+        api.get('/api/organization'),
       ]);
 
       if (!membersRes.ok) throw new Error('Failed to load members');

@@ -12,6 +12,7 @@ import {
   PACKAGE_TYPE_DESCRIPTIONS,
   PACKAGE_STATUS_LABELS,
 } from '@/lib/constants';
+import api from '@/lib/api-client';
 
 const MEMBER_TYPES = [
   { id: 'student', label: 'Student', apiEndpoint: '/api/student-members' },
@@ -58,12 +59,22 @@ export default function PackagesPage() {
   const [formData, setFormData] = useState(getInitialFormData());
   const [renewFormData, setRenewFormData] = useState({
     carry_over: true,
-    total_breakfast: 30,
-    total_lunch: 30,
-    total_dinner: 30,
+    package_type: 'partial',
+    total_breakfast: 0,
+    total_lunch: 0,
+    total_dinner: 0,
+    breakfast_enabled: false,
+    lunch_enabled: false,
+    dinner_enabled: false,
+    breakfast_price: '',
+    lunch_price: '',
+    dinner_price: '',
     price: '',
+    balance: '',
     start_date: '',
     end_date: '',
+    disabled_days: [],
+    disabled_meals: {},
   });
   const [depositAmount, setDepositAmount] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
@@ -93,7 +104,7 @@ export default function PackagesPage() {
   const loadPackages = async (retryCount = 0) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/member-packages-v2');
+      const response = await api.get('/api/member-packages-v2');
       if (!response.ok) throw new Error('Failed to load packages');
       const data = await response.json();
       setPackages(data.packages || []);
@@ -114,9 +125,9 @@ export default function PackagesPage() {
     try {
       setLoadingMembers(true);
       const [studentsRes, facultyRes, staffRes] = await Promise.all([
-        fetch('/api/student-members'),
-        fetch('/api/faculty-members'),
-        fetch('/api/staff-members'),
+        api.get('/api/student-members'),
+        api.get('/api/faculty-members'),
+        api.get('/api/staff-members'),
       ]);
 
       const studentsData = studentsRes.ok ? await studentsRes.json() : { members: [] };
@@ -217,6 +228,49 @@ export default function PackagesPage() {
     };
   }, [formData]);
 
+  // Calculate meal counts for renew form
+  const calculatedRenewMealCounts = useMemo(() => {
+    if (['full_time', 'partial_full_time'].includes(renewFormData.package_type)) {
+      return calculateMealCounts(
+        renewFormData.start_date,
+        renewFormData.end_date,
+        renewFormData.disabled_days,
+        renewFormData.breakfast_enabled,
+        renewFormData.lunch_enabled,
+        renewFormData.dinner_enabled,
+        renewFormData.disabled_meals
+      );
+    }
+    return {
+      breakfast: parseInt(renewFormData.total_breakfast) || 0,
+      lunch: parseInt(renewFormData.total_lunch) || 0,
+      dinner: parseInt(renewFormData.total_dinner) || 0,
+      total: (parseInt(renewFormData.total_breakfast) || 0) + (parseInt(renewFormData.total_lunch) || 0) + (parseInt(renewFormData.total_dinner) || 0),
+    };
+  }, [renewFormData]);
+
+  const handleRenewToggleDay = (dateStr) => {
+    setRenewFormData(prev => ({
+      ...prev,
+      disabled_days: prev.disabled_days.includes(dateStr)
+        ? prev.disabled_days.filter(d => d !== dateStr)
+        : [...prev.disabled_days, dateStr],
+    }));
+  };
+
+  const handleRenewToggleMeal = (dateStr, meal) => {
+    setRenewFormData(prev => {
+      const current = prev.disabled_meals[dateStr] || {};
+      return {
+        ...prev,
+        disabled_meals: {
+          ...prev.disabled_meals,
+          [dateStr]: { ...current, [meal]: !current[meal] },
+        },
+      };
+    });
+  };
+
   const openAddModal = () => {
     setEditingPackage(null);
     setFormData(getInitialFormData());
@@ -263,14 +317,25 @@ export default function PackagesPage() {
     const remainingLunch = Math.max(0, pkg.total_lunch - pkg.consumed_lunch);
     const remainingDinner = Math.max(0, pkg.total_dinner - pkg.consumed_dinner);
 
+    // Pre-fill all data from the original package
     setRenewFormData({
       carry_over: true,
-      total_breakfast: 30,
-      total_lunch: 30,
-      total_dinner: 30,
-      price: '',
+      package_type: pkg.package_type,
+      total_breakfast: pkg.total_breakfast || 0,
+      total_lunch: pkg.total_lunch || 0,
+      total_dinner: pkg.total_dinner || 0,
+      breakfast_enabled: pkg.breakfast_enabled || false,
+      lunch_enabled: pkg.lunch_enabled || false,
+      dinner_enabled: pkg.dinner_enabled || false,
+      breakfast_price: pkg.breakfast_price || '',
+      lunch_price: pkg.lunch_price || '',
+      dinner_price: pkg.dinner_price || '',
+      price: pkg.price || '',
+      balance: pkg.balance || '',
       start_date: '',
       end_date: '',
+      disabled_days: [],
+      disabled_meals: {},
       remaining: {
         breakfast: remainingBreakfast,
         lunch: remainingLunch,
@@ -397,6 +462,8 @@ export default function PackagesPage() {
       // Prepare submit data
       const submitData = {
         ...formData,
+        start_date: formData.start_date || null,
+        end_date: formData.end_date || null,
         price: parseFloat(formData.price) || 0,
         balance: parseFloat(formData.balance) || 0,
         breakfast_price: parseFloat(formData.breakfast_price) || 0,
@@ -419,11 +486,9 @@ export default function PackagesPage() {
 
       while (retryCount <= maxRetries) {
         try {
-          response = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(submitData),
-          });
+          response = method === 'PUT'
+            ? await api.put(url, submitData)
+            : await api.post(url, submitData);
           break; // Success, exit retry loop
         } catch (fetchError) {
           retryCount++;
@@ -466,23 +531,24 @@ export default function PackagesPage() {
       setSaving(true);
       const pkg = renewModal.pkg;
 
-      const response = await fetch(`/api/member-packages-v2/${pkg.id}/renew`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await api.post(`/api/member-packages-v2/${pkg.id}/renew`, {
           carry_over: renewFormData.carry_over,
-          package_type: pkg.package_type,
+          package_type: renewFormData.package_type,
           start_date: renewFormData.start_date || null,
           end_date: renewFormData.end_date || null,
-          breakfast_enabled: pkg.breakfast_enabled,
-          lunch_enabled: pkg.lunch_enabled,
-          dinner_enabled: pkg.dinner_enabled,
-          total_breakfast: parseInt(renewFormData.total_breakfast) || 0,
-          total_lunch: parseInt(renewFormData.total_lunch) || 0,
-          total_dinner: parseInt(renewFormData.total_dinner) || 0,
+          breakfast_enabled: renewFormData.breakfast_enabled,
+          lunch_enabled: renewFormData.lunch_enabled,
+          dinner_enabled: renewFormData.dinner_enabled,
+          total_breakfast: renewFormData.breakfast_enabled ? (calculatedRenewMealCounts.breakfast || parseInt(renewFormData.total_breakfast) || 0) : 0,
+          total_lunch: renewFormData.lunch_enabled ? (calculatedRenewMealCounts.lunch || parseInt(renewFormData.total_lunch) || 0) : 0,
+          total_dinner: renewFormData.dinner_enabled ? (calculatedRenewMealCounts.dinner || parseInt(renewFormData.total_dinner) || 0) : 0,
+          breakfast_price: parseFloat(renewFormData.breakfast_price) || 0,
+          lunch_price: parseFloat(renewFormData.lunch_price) || 0,
+          dinner_price: parseFloat(renewFormData.dinner_price) || 0,
           price: parseFloat(renewFormData.price) || 0,
-        }),
-      });
+          balance: parseFloat(renewFormData.balance) || 0,
+          disabled_days: renewFormData.disabled_days || [],
+        });
 
       const data = await response.json();
 
@@ -519,11 +585,7 @@ export default function PackagesPage() {
       setSaving(true);
       const pkg = depositModal.pkg;
 
-      const response = await fetch(`/api/member-packages-v2/${pkg.id}/deposit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount }),
-      });
+      const response = await api.post(`/api/member-packages-v2/${pkg.id}/deposit`, { amount });
 
       const data = await response.json();
 
@@ -551,9 +613,7 @@ export default function PackagesPage() {
 
     try {
       setDeleting(true);
-      const response = await fetch(`/api/member-packages-v2/${deleteModal.pkg.id}`, {
-        method: 'DELETE',
-      });
+      const response = await api.delete(`/api/member-packages-v2/${deleteModal.pkg.id}`);
 
       if (!response.ok) {
         const data = await response.json();
@@ -1006,7 +1066,7 @@ export default function PackagesPage() {
                         type="number"
                         min="0"
                         value={formData.total_breakfast}
-                        onChange={(e) => setFormData(prev => ({ ...prev, total_breakfast: parseInt(e.target.value) || 0 }))}
+                        onChange={(e) => setFormData(prev => ({ ...prev, total_breakfast: e.target.value === '' ? '' : parseInt(e.target.value) || 0 }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                       />
                     </div>
@@ -1018,7 +1078,7 @@ export default function PackagesPage() {
                         type="number"
                         min="0"
                         value={formData.total_lunch}
-                        onChange={(e) => setFormData(prev => ({ ...prev, total_lunch: parseInt(e.target.value) || 0 }))}
+                        onChange={(e) => setFormData(prev => ({ ...prev, total_lunch: e.target.value === '' ? '' : parseInt(e.target.value) || 0 }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                       />
                     </div>
@@ -1030,7 +1090,7 @@ export default function PackagesPage() {
                         type="number"
                         min="0"
                         value={formData.total_dinner}
-                        onChange={(e) => setFormData(prev => ({ ...prev, total_dinner: parseInt(e.target.value) || 0 }))}
+                        onChange={(e) => setFormData(prev => ({ ...prev, total_dinner: e.target.value === '' ? '' : parseInt(e.target.value) || 0 }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                       />
                     </div>
@@ -1326,164 +1386,201 @@ export default function PackagesPage() {
       </Modal>
 
       {/* Renew Modal */}
-      <Modal isOpen={renewModal.open} onClose={() => setRenewModal({ open: false, pkg: null })} title="Renew Package" size="md">
+      <Modal
+        isOpen={renewModal.open}
+        onClose={() => setRenewModal({ open: false, pkg: null })}
+        title="Renew Package"
+        size="2xl"
+      >
         {renewModal.pkg && (
           <form onSubmit={handleRenew}>
-            <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-sm font-medium text-gray-700 mb-2">Current Package Status</div>
-                <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                  {renewModal.pkg.breakfast_enabled && (
-                    <div className="p-2 bg-white rounded border">
-                      <div className="text-amber-600">Remaining Breakfast</div>
-                      <div className="text-xl font-bold">{renewFormData.remaining?.breakfast || 0}</div>
-                    </div>
-                  )}
-                  {renewModal.pkg.lunch_enabled && (
-                    <div className="p-2 bg-white rounded border">
-                      <div className="text-orange-600">Remaining Lunch</div>
-                      <div className="text-xl font-bold">{renewFormData.remaining?.lunch || 0}</div>
-                    </div>
-                  )}
-                  {renewModal.pkg.dinner_enabled && (
-                    <div className="p-2 bg-white rounded border">
-                      <div className="text-indigo-600">Remaining Dinner</div>
-                      <div className="text-xl font-bold">{renewFormData.remaining?.dinner || 0}</div>
-                    </div>
-                  )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                {/* Member (read-only) + Remaining meals inline */}
+                <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg text-sm">
+                  <div className="font-medium text-gray-700 whitespace-nowrap">{selectedMember ? getMemberDisplayName(selectedMember) : '-'}</div>
+                  <div className="flex gap-2 ml-auto text-xs">
+                    {renewModal.pkg.breakfast_enabled && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">B: {renewFormData.remaining?.breakfast || 0}</span>}
+                    {renewModal.pkg.lunch_enabled && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded">L: {renewFormData.remaining?.lunch || 0}</span>}
+                    {renewModal.pkg.dinner_enabled && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded">D: {renewFormData.remaining?.dinner || 0}</span>}
+                  </div>
                 </div>
+
+                {/* Carry over - only for partial */}
+                {renewFormData.package_type === 'partial' && (renewFormData.remaining?.breakfast > 0 || renewFormData.remaining?.lunch > 0 || renewFormData.remaining?.dinner > 0) && (
+                  <label className="flex items-center gap-2 px-3 py-1.5 border rounded-lg cursor-pointer hover:bg-gray-50 text-sm">
+                    <input type="checkbox" checked={renewFormData.carry_over} onChange={(e) => setRenewFormData(prev => ({ ...prev, carry_over: e.target.checked }))} className="rounded border-gray-300 text-primary-600" />
+                    <span className="font-medium">Carry over remaining meals</span>
+                  </label>
+                )}
+
+                {/* Package Type + Meals row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Package Type</label>
+                    <select
+                      value={renewFormData.package_type}
+                      onChange={(e) => setRenewFormData(prev => ({ ...prev, package_type: e.target.value, disabled_days: [], disabled_meals: {} }))}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                    >
+                      {Object.entries(PACKAGE_TYPE).map(([key, value]) => (
+                        <option key={value} value={value}>{PACKAGE_TYPE_LABELS[value]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Meals</label>
+                    <div className="flex gap-1">
+                      {['breakfast', 'lunch', 'dinner'].map(meal => (
+                        <label key={meal} className={`flex-1 flex items-center justify-center px-1 py-1.5 rounded-lg border cursor-pointer text-xs font-medium transition-all ${
+                          renewFormData[`${meal}_enabled`]
+                            ? meal === 'breakfast' ? 'bg-amber-100 border-amber-400 text-amber-700'
+                            : meal === 'lunch' ? 'bg-orange-100 border-orange-400 text-orange-700'
+                            : 'bg-indigo-100 border-indigo-400 text-indigo-700'
+                            : 'bg-white border-gray-200 text-gray-500'
+                        }`}>
+                          <input type="checkbox" checked={renewFormData[`${meal}_enabled`]} onChange={(e) => setRenewFormData(prev => ({ ...prev, [`${meal}_enabled`]: e.target.checked }))} className="sr-only" />
+                          <span className="capitalize">{meal.slice(0, 1).toUpperCase()}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Date Range (for full_time and partial_full_time) */}
+                {['full_time', 'partial_full_time'].includes(renewFormData.package_type) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Start Date</label>
+                      <input type="date" value={renewFormData.start_date} onChange={(e) => setRenewFormData(prev => ({ ...prev, start_date: e.target.value }))} className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">End Date</label>
+                      <input type="date" value={renewFormData.end_date} onChange={(e) => setRenewFormData(prev => ({ ...prev, end_date: e.target.value }))} className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" required />
+                    </div>
+                  </div>
+                )}
+
+                {/* Meal Counts for partial */}
+                {renewFormData.package_type === 'partial' && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {renewFormData.breakfast_enabled && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Breakfast</label>
+                        <input type="number" min="0" value={renewFormData.total_breakfast} onChange={(e) => setRenewFormData(prev => ({ ...prev, total_breakfast: e.target.value === '' ? '' : parseInt(e.target.value) || 0 }))} className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                      </div>
+                    )}
+                    {renewFormData.lunch_enabled && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Lunch</label>
+                        <input type="number" min="0" value={renewFormData.total_lunch} onChange={(e) => setRenewFormData(prev => ({ ...prev, total_lunch: e.target.value === '' ? '' : parseInt(e.target.value) || 0 }))} className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                      </div>
+                    )}
+                    {renewFormData.dinner_enabled && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Dinner</label>
+                        <input type="number" min="0" value={renewFormData.total_dinner} onChange={(e) => setRenewFormData(prev => ({ ...prev, total_dinner: e.target.value === '' ? '' : parseInt(e.target.value) || 0 }))} className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Daily Basis Configuration */}
+                {renewFormData.package_type === 'daily_basis' && (
+                  <>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Initial Deposit (PKR)</label>
+                      <input type="number" min="0" value={renewFormData.balance} onChange={(e) => setRenewFormData(prev => ({ ...prev, balance: e.target.value }))} placeholder="e.g., 10000" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" required />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {renewFormData.breakfast_enabled && (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">B. Price</label>
+                          <input type="number" min="0" value={renewFormData.breakfast_price} onChange={(e) => setRenewFormData(prev => ({ ...prev, breakfast_price: e.target.value }))} placeholder="150" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                        </div>
+                      )}
+                      {renewFormData.lunch_enabled && (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">L. Price</label>
+                          <input type="number" min="0" value={renewFormData.lunch_price} onChange={(e) => setRenewFormData(prev => ({ ...prev, lunch_price: e.target.value }))} placeholder="200" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                        </div>
+                      )}
+                      {renewFormData.dinner_enabled && (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">D. Price</label>
+                          <input type="number" min="0" value={renewFormData.dinner_price} onChange={(e) => setRenewFormData(prev => ({ ...prev, dinner_price: e.target.value }))} placeholder="200" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Package Price */}
+                {renewFormData.package_type !== 'daily_basis' && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Package Price (PKR)</label>
+                    <input type="number" min="0" value={renewFormData.price} onChange={(e) => setRenewFormData(prev => ({ ...prev, price: e.target.value }))} placeholder="e.g., 5000" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                )}
+
+                {/* Summary */}
+                {renewFormData.package_type !== 'daily_basis' && (
+                  <div className="p-2 bg-primary-50 rounded-lg border border-primary-200 text-sm">
+                    <div className="flex flex-wrap gap-2">
+                      {renewFormData.breakfast_enabled && <span>B: <strong>{calculatedRenewMealCounts.breakfast}</strong></span>}
+                      {renewFormData.lunch_enabled && <span>L: <strong>{calculatedRenewMealCounts.lunch}</strong></span>}
+                      {renewFormData.dinner_enabled && <span>D: <strong>{calculatedRenewMealCounts.dinner}</strong></span>}
+                      <span className="font-medium text-primary-700 ml-auto">Total: <strong>{calculatedRenewMealCounts.total}</strong></span>
+                    </div>
+                    {renewFormData.package_type === 'partial' && renewFormData.carry_over && (
+                      <div className="flex flex-wrap gap-2 mt-1 pt-1 border-t border-primary-200 text-green-700 text-xs">
+                        <span className="font-medium">With carry-over:</span>
+                        {renewFormData.breakfast_enabled && <span>B: <strong>{(parseInt(renewFormData.total_breakfast) || 0) + (renewFormData.remaining?.breakfast || 0)}</strong></span>}
+                        {renewFormData.lunch_enabled && <span>L: <strong>{(parseInt(renewFormData.total_lunch) || 0) + (renewFormData.remaining?.lunch || 0)}</strong></span>}
+                        {renewFormData.dinner_enabled && <span>D: <strong>{(parseInt(renewFormData.total_dinner) || 0) + (renewFormData.remaining?.dinner || 0)}</strong></span>}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* Carry over option - only for partial type */}
-              {renewModal.pkg.package_type === 'partial' && (
-                <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-                  <input
-                    type="checkbox"
-                    checked={renewFormData.carry_over}
-                    onChange={(e) => setRenewFormData(prev => ({ ...prev, carry_over: e.target.checked }))}
-                    className="rounded border-gray-300 text-primary-600"
-                  />
-                  <div>
-                    <div className="font-medium text-sm">Carry over remaining meals</div>
-                    <div className="text-xs text-gray-500">Add remaining meals to the new package</div>
-                  </div>
-                </label>
-              )}
-
-              <div className="text-sm font-medium text-gray-700">New Package Configuration</div>
-
-              {/* Date range for full_time and partial_full_time */}
-              {['full_time', 'partial_full_time'].includes(renewModal.pkg.package_type) && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Start Date</label>
-                    <input
-                      type="date"
-                      value={renewFormData.start_date}
-                      onChange={(e) => setRenewFormData(prev => ({ ...prev, start_date: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">End Date</label>
-                    <input
-                      type="date"
-                      value={renewFormData.end_date}
-                      onChange={(e) => setRenewFormData(prev => ({ ...prev, end_date: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Meal counts for partial */}
-              {renewModal.pkg.package_type === 'partial' && (
-                <div className="grid grid-cols-3 gap-4">
-                  {renewModal.pkg.breakfast_enabled && (
+              {/* Right Column - Calendar */}
+              <div className="lg:border-l lg:pl-4">
+                {['full_time', 'partial_full_time'].includes(renewFormData.package_type) &&
+                  renewFormData.start_date && renewFormData.end_date ? (
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Breakfast</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={renewFormData.total_breakfast}
-                        onChange={(e) => setRenewFormData(prev => ({ ...prev, total_breakfast: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      <label className="block text-xs text-gray-500 mb-1">Select Days <span className="text-gray-400">(click to toggle)</span></label>
+                      <PackageCalendar
+                        startDate={renewFormData.start_date}
+                        endDate={renewFormData.end_date}
+                        disabledDays={renewFormData.disabled_days}
+                        disabledMeals={renewFormData.disabled_meals}
+                        onToggleDay={handleRenewToggleDay}
+                        onToggleMeal={handleRenewToggleMeal}
+                        breakfastEnabled={renewFormData.breakfast_enabled}
+                        lunchEnabled={renewFormData.lunch_enabled}
+                        dinnerEnabled={renewFormData.dinner_enabled}
+                        readOnly={false}
                       />
                     </div>
-                  )}
-                  {renewModal.pkg.lunch_enabled && (
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Lunch</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={renewFormData.total_lunch}
-                        onChange={(e) => setRenewFormData(prev => ({ ...prev, total_lunch: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                      {!['full_time', 'partial_full_time'].includes(renewFormData.package_type) ? (
+                        <p>Calendar not available for this package type</p>
+                      ) : (
+                        <p>Select start and end dates to view calendar</p>
+                      )}
                     </div>
                   )}
-                  {renewModal.pkg.dinner_enabled && (
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Dinner</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={renewFormData.total_dinner}
-                        onChange={(e) => setRenewFormData(prev => ({ ...prev, total_dinner: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Package Price (PKR)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={renewFormData.price}
-                  onChange={(e) => setRenewFormData(prev => ({ ...prev, price: e.target.value }))}
-                  placeholder="Enter price"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                />
               </div>
-
-              {/* Final totals preview for partial with carry-over */}
-              {renewModal.pkg.package_type === 'partial' && renewFormData.carry_over && (
-                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                  <div className="text-sm font-medium text-green-700 mb-2">Final Totals (with carry-over)</div>
-                  <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                    {renewModal.pkg.breakfast_enabled && (
-                      <div>
-                        <div className="text-amber-700">Breakfast</div>
-                        <div className="font-bold">{(parseInt(renewFormData.total_breakfast) || 0) + (renewFormData.remaining?.breakfast || 0)}</div>
-                      </div>
-                    )}
-                    {renewModal.pkg.lunch_enabled && (
-                      <div>
-                        <div className="text-orange-700">Lunch</div>
-                        <div className="font-bold">{(parseInt(renewFormData.total_lunch) || 0) + (renewFormData.remaining?.lunch || 0)}</div>
-                      </div>
-                    )}
-                    {renewModal.pkg.dinner_enabled && (
-                      <div>
-                        <div className="text-indigo-700">Dinner</div>
-                        <div className="font-bold">{(parseInt(renewFormData.total_dinner) || 0) + (renewFormData.remaining?.dinner || 0)}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
 
-            <div className="flex gap-3 pt-4 mt-4 border-t">
+            <div className="flex gap-3 pt-3 mt-3 border-t">
               <Button type="button" variant="outline" onClick={() => setRenewModal({ open: false, pkg: null })} className="flex-1">
                 Cancel
               </Button>
               <Button type="submit" loading={saving} className="flex-1">
-                Create New Package
+                Renew Package
               </Button>
             </div>
           </form>

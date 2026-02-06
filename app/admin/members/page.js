@@ -18,6 +18,7 @@ import {
   DUTY_SHIFT_LABELS,
   MEMBER_PAYMENT_METHOD_LABELS,
 } from '@/lib/constants';
+import api from '@/lib/api-client';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -215,7 +216,7 @@ export default function MembersPage() {
   // Load organization settings for meal timings
   const loadMealTimings = async () => {
     try {
-      const response = await fetch(`/api/organization?t=${Date.now()}`, {
+      const response = await api.get(`/api/organization?t=${Date.now()}`, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -257,9 +258,9 @@ export default function MembersPage() {
 
       // Fetch from all three APIs in parallel
       const [studentsRes, facultyRes, staffRes] = await Promise.all([
-        fetch('/api/student-members'),
-        fetch('/api/faculty-members'),
-        fetch('/api/staff-members'),
+        api.get('/api/student-members'),
+        api.get('/api/faculty-members'),
+        api.get('/api/staff-members'),
       ]);
 
       const studentsData = studentsRes.ok ? await studentsRes.json() : { members: [] };
@@ -595,11 +596,9 @@ export default function MembersPage() {
       // Remove member_type from form data before sending
       const { member_type, ...submitData } = formData;
 
-      const response = await fetch(url, {
-        method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
-      });
+      const response = isEdit
+        ? await api.put(url, submitData)
+        : await api.post(url, submitData);
 
       const data = await response.json();
 
@@ -637,9 +636,7 @@ export default function MembersPage() {
     try {
       setDeleting(true);
       const endpoint = getApiEndpoint(deleteModal.member.member_type);
-      const response = await fetch(`${endpoint}/${deleteModal.member.id}`, {
-        method: 'DELETE',
-      });
+      const response = await api.delete(`${endpoint}/${deleteModal.member.id}`);
 
       if (!response.ok) {
         const data = await response.json();
@@ -663,11 +660,7 @@ export default function MembersPage() {
     try {
       setUpdatingStatus(true);
       const endpoint = getApiEndpoint(statusModal.member.member_type);
-      const response = await fetch(`${endpoint}/${statusModal.member.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      const response = await api.put(`${endpoint}/${statusModal.member.id}`, { status: newStatus });
 
       if (!response.ok) {
         const data = await response.json();

@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET - Search/verify token
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const tokenQuery = searchParams.get('token');
     const recent = searchParams.get('recent');
@@ -15,6 +19,7 @@ export async function GET(request) {
       const { data: tokens, error } = await supabase
         .from('meal_tokens')
         .select('*, member:members(id, name, member_id)')
+        .eq('organization_id', orgId)
         .eq('token_date', today)
         .eq('status', 'COLLECTED')
         .order('collected_at', { ascending: false })
@@ -40,6 +45,7 @@ export async function GET(request) {
     let query = supabase
       .from('meal_tokens')
       .select('*, member:members(id, name, member_id)')
+      .eq('organization_id', orgId)
       .eq('token_date', today);
 
     // Check if it's a UUID
@@ -80,6 +86,9 @@ export async function GET(request) {
 // POST - Collect token
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
     const { tokenId } = body;
 
@@ -95,6 +104,7 @@ export async function POST(request) {
       .from('meal_tokens')
       .select('*')
       .eq('id', tokenId)
+      .eq('organization_id', orgId)
       .single();
 
     if (fetchError || !existingToken) {
@@ -129,6 +139,7 @@ export async function POST(request) {
         collected_at: new Date().toISOString(),
       })
       .eq('id', tokenId)
+      .eq('organization_id', orgId)
       .select('*, member:members(id, name, member_id)')
       .single();
 

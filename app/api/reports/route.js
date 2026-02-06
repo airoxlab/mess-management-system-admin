@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // Force dynamic rendering since this route uses request.url
 export const dynamic = 'force-dynamic';
@@ -7,6 +8,9 @@ export const dynamic = 'force-dynamic';
 // GET - Generate reports
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'daily';
     const startDate = searchParams.get('start') || new Date().toISOString().split('T')[0];
@@ -16,6 +20,7 @@ export async function GET(request) {
     const { data: tokens, error: tokensError } = await supabase
       .from('meal_tokens')
       .select('*, member:members(id, name, member_id)')
+      .eq('organization_id', orgId)
       .gte('token_date', startDate)
       .lte('token_date', endDate)
       .order('created_at', { ascending: false });
@@ -28,6 +33,7 @@ export async function GET(request) {
     const { data: transactions, error: txnError } = await supabase
       .from('transactions')
       .select('*, member:members(id, name, member_id)')
+      .eq('organization_id', orgId)
       .gte('created_at', `${startDate}T00:00:00`)
       .lte('created_at', `${endDate}T23:59:59`)
       .order('created_at', { ascending: false });

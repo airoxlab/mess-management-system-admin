@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // POST - Scan member QR code
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
     const { qrData } = body;
 
@@ -26,7 +30,7 @@ export async function POST(request) {
       query = query.eq('member_id', qrData);
     }
 
-    const { data: member, error } = await query.single();
+    const { data: member, error } = await query.eq('organization_id', orgId).single();
 
     if (error || !member) {
       return NextResponse.json(

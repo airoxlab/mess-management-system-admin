@@ -1,25 +1,20 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
-
-// Helper to get the default organization ID
-async function getDefaultOrgId() {
-  const { data } = await supabase
-    .from('organizations')
-    .select('id')
-    .limit(1)
-    .single();
-  return data?.id || null;
-}
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET - List all packages
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const activeOnly = searchParams.get('active') === 'true';
 
     let query = supabase
       .from('packages')
       .select('*')
+      .eq('organization_id', orgId)
       .order('price', { ascending: true });
 
     if (activeOnly) {
@@ -45,8 +40,11 @@ export async function GET(request) {
 // POST - Create new package
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
-    const { name, meals_count, price, is_active, organization_id } = body;
+    const { name, meals_count, price, is_active } = body;
 
     if (!name || !meals_count || price === undefined) {
       return NextResponse.json(
@@ -54,9 +52,6 @@ export async function POST(request) {
         { status: 400 }
       );
     }
-
-    // Use provided organization_id or get from database
-    const orgId = organization_id || await getDefaultOrgId();
 
     const { data: pkg, error } = await supabase
       .from('packages')

@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET - Get single package
 export async function GET(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { packageId } = params;
 
     const { data: pkg, error } = await supabase
       .from('packages')
       .select('*')
       .eq('id', packageId)
+      .eq('organization_id', orgId)
       .single();
 
     if (error) {
@@ -36,6 +41,9 @@ export async function GET(request, { params }) {
 // PUT - Update package
 export async function PUT(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { packageId } = params;
     const body = await request.json();
     const { name, meals_count, price, is_active } = body;
@@ -51,6 +59,7 @@ export async function PUT(request, { params }) {
       .from('packages')
       .update(updates)
       .eq('id', packageId)
+      .eq('organization_id', orgId)
       .select()
       .single();
 
@@ -71,12 +80,16 @@ export async function PUT(request, { params }) {
 // DELETE - Delete package
 export async function DELETE(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { packageId } = params;
 
     const { error } = await supabase
       .from('packages')
       .delete()
-      .eq('id', packageId);
+      .eq('id', packageId)
+      .eq('organization_id', orgId);
 
     if (error) {
       throw error;

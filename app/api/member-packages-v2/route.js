@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET all member packages with the new package type system
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const memberType = searchParams.get('member_type');
     const packageType = searchParams.get('package_type');
@@ -14,6 +18,7 @@ export async function GET(request) {
     let query = supabase
       .from('member_packages')
       .select('*')
+      .eq('organization_id', orgId)
       .order('created_at', { ascending: false });
 
     if (memberType && memberType !== 'all') {
@@ -78,6 +83,9 @@ export async function GET(request) {
 // POST create new member package
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
 
     // Validate required fields
@@ -111,6 +119,7 @@ export async function POST(request) {
     const { data: existingPackage } = await supabase
       .from('member_packages')
       .select('id, package_type, status')
+      .eq('organization_id', orgId)
       .eq('member_id', body.member_id)
       .eq('member_type', body.member_type)
       .eq('is_active', true)
@@ -130,6 +139,7 @@ export async function POST(request) {
     // Prepare package data including disabled_meals as JSONB
     const insertData = {
       ...packageData,
+      organization_id: orgId,
       status: 'active',
       is_active: true,
     };
@@ -153,6 +163,7 @@ export async function POST(request) {
       const disabledDaysData = disabled_days.map(date => ({
         package_id: newPackage.id,
         disabled_date: date,
+        organization_id: orgId,
       }));
 
       const { error: disabledError } = await supabase
@@ -168,6 +179,7 @@ export async function POST(request) {
 
     // Create history record
     await supabase.from('package_history').insert([{
+      organization_id: orgId,
       member_id: newPackage.member_id,
       member_type: newPackage.member_type,
       package_id: newPackage.id,
@@ -185,6 +197,7 @@ export async function POST(request) {
     // If daily_basis, create initial deposit transaction
     if (body.package_type === 'daily_basis' && body.balance > 0) {
       await supabase.from('daily_basis_transactions').insert([{
+        organization_id: orgId,
         package_id: newPackage.id,
         member_id: newPackage.member_id,
         transaction_type: 'deposit',

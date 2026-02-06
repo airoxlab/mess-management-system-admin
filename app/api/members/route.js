@@ -1,15 +1,6 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
-
-// Helper to get the default organization ID
-async function getDefaultOrgId() {
-  const { data } = await supabase
-    .from('organizations')
-    .select('id')
-    .limit(1)
-    .single();
-  return data?.id || null;
-}
+import { requireOrgId } from '@/lib/get-org-id';
 
 // Validation helpers
 const validateName = (name) => {
@@ -35,6 +26,9 @@ const VALID_MEMBER_TYPES = ['student', 'staff', 'faculty', 'guest'];
 // GET - List all members
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const search = searchParams.get('search');
@@ -42,6 +36,7 @@ export async function GET(request) {
     let query = supabase
       .from('members')
       .select('*')
+      .eq('organization_id', orgId)
       .order('created_at', { ascending: false });
 
     if (status) {
@@ -71,8 +66,11 @@ export async function GET(request) {
 // POST - Create new member
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
-    const { member_id: providedMemberId, name, contact, valid_until, balance_meals, status, member_type, organization_id, photo_url } = body;
+    const { member_id: providedMemberId, name, contact, valid_until, balance_meals, status, member_type, photo_url } = body;
 
     const member_id = providedMemberId?.trim();
 
@@ -111,9 +109,6 @@ export async function POST(request) {
 
     // Validate member_type if provided
     const finalMemberType = member_type && VALID_MEMBER_TYPES.includes(member_type) ? member_type : 'student';
-
-    // Use provided organization_id or get from database
-    const orgId = organization_id || await getDefaultOrgId();
 
     const { data: member, error } = await supabase
       .from('members')

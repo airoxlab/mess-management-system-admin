@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { toast } from 'sonner';
+import api from '@/lib/api-client';
 
 export function PhotoUpload({ value, onChange, className = '' }) {
   const [uploading, setUploading] = useState(false);
@@ -40,10 +41,7 @@ export function PhotoUpload({ value, onChange, className = '' }) {
       formData.append('file', file);
       formData.append('folder', 'members');
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await api.upload('/api/upload', formData);
 
       if (!response.ok) {
         const data = await response.json();

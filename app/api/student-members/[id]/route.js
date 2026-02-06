@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET single student member
 export async function GET(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = await params;
 
     const { data, error } = await supabase
       .from('student_members')
       .select('*')
       .eq('id', id)
+      .eq('organization_id', orgId)
       .single();
 
     if (error) {
@@ -29,6 +34,9 @@ export async function GET(request, { params }) {
 // PUT update student member
 export async function PUT(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = await params;
     const body = await request.json();
 
@@ -41,6 +49,7 @@ export async function PUT(request, { params }) {
       .from('student_members')
       .update(body)
       .eq('id', id)
+      .eq('organization_id', orgId)
       .select()
       .single();
 
@@ -75,12 +84,16 @@ export async function PUT(request, { params }) {
 // DELETE student member
 export async function DELETE(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = await params;
 
     const { error } = await supabase
       .from('student_members')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('organization_id', orgId);
 
     if (error) throw error;
 

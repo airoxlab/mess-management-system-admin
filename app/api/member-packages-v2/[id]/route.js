@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET single package by ID
 export async function GET(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = params;
 
     const { data: pkg, error } = await supabase
       .from('member_packages')
       .select('*')
       .eq('id', id)
+      .eq('organization_id', orgId)
       .single();
 
     if (error) throw error;
@@ -58,6 +63,9 @@ export async function GET(request, { params }) {
 // PUT update package
 export async function PUT(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = params;
     const body = await request.json();
 
@@ -66,6 +74,7 @@ export async function PUT(request, { params }) {
       .from('member_packages')
       .select('*')
       .eq('id', id)
+      .eq('organization_id', orgId)
       .single();
 
     if (fetchError) throw fetchError;
@@ -87,6 +96,7 @@ export async function PUT(request, { params }) {
       .from('member_packages')
       .update(updateData)
       .eq('id', id)
+      .eq('organization_id', orgId)
       .select()
       .single();
 
@@ -105,6 +115,7 @@ export async function PUT(request, { params }) {
         const disabledDaysData = disabled_days.map(date => ({
           package_id: id,
           disabled_date: date,
+          organization_id: orgId,
         }));
 
         await supabase
@@ -125,6 +136,9 @@ export async function PUT(request, { params }) {
 // DELETE package
 export async function DELETE(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = params;
 
     // Get existing package
@@ -132,6 +146,7 @@ export async function DELETE(request, { params }) {
       .from('member_packages')
       .select('*')
       .eq('id', id)
+      .eq('organization_id', orgId)
       .single();
 
     if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
@@ -150,7 +165,8 @@ export async function DELETE(request, { params }) {
     const { error: deleteError } = await supabase
       .from('member_packages')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('organization_id', orgId);
 
     if (deleteError) throw deleteError;
 

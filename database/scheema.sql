@@ -72,6 +72,7 @@ create index IF not exists idx_users_email on public.users using btree (email) T
 
 create table public.staff_members (
   id uuid not null default extensions.uuid_generate_v4 (),
+  organization_id uuid not null,
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
   full_name character varying(255) not null,
@@ -103,6 +104,7 @@ create table public.staff_members (
   communication_consent boolean null default false,
   has_food_allergies boolean null default false,
   constraint staff_members_pkey primary key (id),
+  constraint staff_members_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint staff_members_employee_id_key unique (employee_id),
   constraint staff_members_cnic_no_key unique (cnic_no),
   constraint staff_members_food_preference_check check (
@@ -172,6 +174,7 @@ create table public.staff_members (
   )
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_staff_organization on public.staff_members using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_staff_employee_id on public.staff_members using btree (employee_id) TABLESPACE pg_default;
 
 create index IF not exists idx_staff_cnic on public.staff_members using btree (cnic_no) TABLESPACE pg_default;
@@ -213,6 +216,7 @@ execute FUNCTION update_updated_at_column ();
 
 create table public.member_meal_packages (
   id uuid not null default extensions.uuid_generate_v4 (),
+  organization_id uuid not null,
   member_id uuid not null,
   member_type character varying(20) not null,
   breakfast_enabled boolean null default false,
@@ -231,9 +235,11 @@ create table public.member_meal_packages (
   notes text null,
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
-  constraint member_meal_packages_pkey primary key (id)
+  constraint member_meal_packages_pkey primary key (id),
+  constraint member_meal_packages_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_member_meal_packages_organization on public.member_meal_packages using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_member_meal_packages_member on public.member_meal_packages using btree (member_id, member_type) TABLESPACE pg_default;
 
 create index IF not exists idx_member_meal_packages_active on public.member_meal_packages using btree (is_active) TABLESPACE pg_default;
@@ -306,6 +312,7 @@ execute FUNCTION update_updated_at_column ();
 
 create table public.meal_selections (
   id uuid not null default gen_random_uuid (),
+  organization_id uuid not null,
   member_id uuid not null,
   member_type text not null,
   date date not null,
@@ -315,12 +322,16 @@ create table public.meal_selections (
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
   constraint meal_selections_pkey primary key (id),
+  constraint meal_selections_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint meal_selections_member_id_member_type_date_key unique (member_id, member_type, date)
 ) TABLESPACE pg_default;
+
+create index IF not exists idx_meal_selections_organization on public.meal_selections using btree (organization_id) TABLESPACE pg_default;
 
 
 create table public.meal_reports (
   id uuid not null default gen_random_uuid (),
+  organization_id uuid not null,
   member_id uuid not null,
   member_type character varying(50) not null,
   member_name character varying(255) null,
@@ -333,9 +344,11 @@ create table public.meal_reports (
   resolved_by uuid null,
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
-  constraint meal_reports_pkey primary key (id)
+  constraint meal_reports_pkey primary key (id),
+  constraint meal_reports_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_meal_reports_organization on public.meal_reports using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_meal_reports_member on public.meal_reports using btree (member_id, member_type) TABLESPACE pg_default;
 
 create index IF not exists idx_meal_reports_date on public.meal_reports using btree (report_date) TABLESPACE pg_default;
@@ -346,6 +359,7 @@ create index IF not exists idx_meal_reports_status on public.meal_reports using 
 
 create table public.faculty_members (
   id uuid not null default extensions.uuid_generate_v4 (),
+  organization_id uuid not null,
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
   full_name character varying(255) not null,
@@ -370,6 +384,7 @@ create table public.faculty_members (
   cnic_no character varying(15) null,
   residential_address text null,
   constraint faculty_members_pkey primary key (id),
+  constraint faculty_members_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint faculty_members_employee_id_key unique (employee_id),
   constraint faculty_members_food_preference_check check (
     (
@@ -437,6 +452,7 @@ create table public.faculty_members (
   )
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_faculty_organization on public.faculty_members using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_faculty_email on public.faculty_members using btree (email_address) TABLESPACE pg_default;
 
 create index IF not exists idx_faculty_employee_id on public.faculty_members using btree (employee_id) TABLESPACE pg_default;
@@ -471,6 +487,7 @@ create index IF not exists idx_daily_counter_org_date on public.daily_token_coun
 -- 1. Member Packages (Enhanced package system with 4 types)
 create table public.member_packages (
   id uuid not null default gen_random_uuid(),
+  organization_id uuid not null,
   member_id uuid not null,
   member_type character varying(20) not null, -- student, faculty, staff
   package_type character varying(20) not null, -- full_time, partial_full_time, partial, daily_basis
@@ -522,6 +539,7 @@ create table public.member_packages (
   updated_at timestamp with time zone null default now(),
 
   constraint member_packages_pkey primary key (id),
+  constraint member_packages_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint member_packages_carried_over_fkey foreign key (carried_over_from_package_id) references member_packages(id),
   constraint member_packages_package_type_check check (
     (
@@ -565,6 +583,7 @@ create table public.member_packages (
   )
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_member_packages_organization on public.member_packages using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_member_packages_member on public.member_packages using btree (member_id, member_type) TABLESPACE pg_default;
 create index IF not exists idx_member_packages_active on public.member_packages using btree (is_active) TABLESPACE pg_default;
 create index IF not exists idx_member_packages_type on public.member_packages using btree (package_type) TABLESPACE pg_default;
@@ -579,14 +598,17 @@ execute FUNCTION update_updated_at_column ();
 -- 2. Package Disabled Days (for partial_full_time)
 create table public.package_disabled_days (
   id uuid not null default gen_random_uuid(),
+  organization_id uuid not null,
   package_id uuid not null,
   disabled_date date not null,
   created_at timestamp with time zone null default now(),
   constraint package_disabled_days_pkey primary key (id),
+  constraint package_disabled_days_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint package_disabled_days_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
   constraint package_disabled_days_unique unique (package_id, disabled_date)
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_package_disabled_days_organization on public.package_disabled_days using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_package_disabled_days_package on public.package_disabled_days using btree (package_id) TABLESPACE pg_default;
 
 
@@ -594,6 +616,7 @@ create index IF not exists idx_package_disabled_days_package on public.package_d
 -- 3. Meal Consumption History
 create table public.meal_consumption_history (
   id uuid not null default gen_random_uuid(),
+  organization_id uuid not null,
   package_id uuid not null,
   member_id uuid not null,
   member_type character varying(20) not null,
@@ -607,6 +630,7 @@ create table public.meal_consumption_history (
   notes text null,
 
   constraint meal_consumption_history_pkey primary key (id),
+  constraint meal_consumption_history_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint meal_consumption_history_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
   constraint meal_consumption_history_meal_type_check check (
     (
@@ -623,6 +647,7 @@ create table public.meal_consumption_history (
   )
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_meal_consumption_organization on public.meal_consumption_history using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_meal_consumption_package on public.meal_consumption_history using btree (package_id) TABLESPACE pg_default;
 create index IF not exists idx_meal_consumption_member on public.meal_consumption_history using btree (member_id, member_type) TABLESPACE pg_default;
 create index IF not exists idx_meal_consumption_date on public.meal_consumption_history using btree (consumed_at) TABLESPACE pg_default;
@@ -632,6 +657,7 @@ create index IF not exists idx_meal_consumption_date on public.meal_consumption_
 -- 4. Package History (for tracking renewals)
 create table public.package_history (
   id uuid not null default gen_random_uuid(),
+  organization_id uuid not null,
   member_id uuid not null,
   member_type character varying(20) not null,
   package_id uuid not null,
@@ -651,6 +677,7 @@ create table public.package_history (
   created_at timestamp with time zone null default now(),
 
   constraint package_history_pkey primary key (id),
+  constraint package_history_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint package_history_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
   constraint package_history_previous_fkey foreign key (previous_package_id) references member_packages(id),
   constraint package_history_action_check check (
@@ -669,6 +696,7 @@ create table public.package_history (
   )
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_package_history_organization on public.package_history using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_package_history_member on public.package_history using btree (member_id, member_type) TABLESPACE pg_default;
 create index IF not exists idx_package_history_package on public.package_history using btree (package_id) TABLESPACE pg_default;
 
@@ -677,6 +705,7 @@ create index IF not exists idx_package_history_package on public.package_history
 -- 5. Daily Basis Transaction History
 create table public.daily_basis_transactions (
   id uuid not null default gen_random_uuid(),
+  organization_id uuid not null,
   package_id uuid not null,
   member_id uuid not null,
   transaction_type character varying(20) not null, -- deposit, meal_deduction, refund
@@ -688,6 +717,7 @@ create table public.daily_basis_transactions (
   created_at timestamp with time zone null default now(),
 
   constraint daily_basis_transactions_pkey primary key (id),
+  constraint daily_basis_transactions_organization_id_fkey foreign key (organization_id) references organizations(id) on delete cascade,
   constraint daily_basis_transactions_package_fkey foreign key (package_id) references member_packages(id) on delete cascade,
   constraint daily_basis_transactions_type_check check (
     (
@@ -704,6 +734,7 @@ create table public.daily_basis_transactions (
   )
 ) TABLESPACE pg_default;
 
+create index IF not exists idx_daily_transactions_organization on public.daily_basis_transactions using btree (organization_id) TABLESPACE pg_default;
 create index IF not exists idx_daily_transactions_package on public.daily_basis_transactions using btree (package_id) TABLESPACE pg_default;
 create index IF not exists idx_daily_transactions_member on public.daily_basis_transactions using btree (member_id) TABLESPACE pg_default;
 create index IF not exists idx_daily_transactions_date on public.daily_basis_transactions using btree (created_at) TABLESPACE pg_default;

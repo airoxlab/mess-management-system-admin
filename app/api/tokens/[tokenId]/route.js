@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET - Get single token
 export async function GET(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { tokenId } = params;
 
     const { data: token, error } = await supabase
       .from('meal_tokens')
       .select('*, member:members(id, name, member_id)')
       .eq('id', tokenId)
+      .eq('organization_id', orgId)
       .single();
 
     if (error) {
@@ -36,6 +41,9 @@ export async function GET(request, { params }) {
 // PUT - Update token (cancel, etc.)
 export async function PUT(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { tokenId } = params;
     const body = await request.json();
     const { status } = body;
@@ -51,6 +59,7 @@ export async function PUT(request, { params }) {
       .from('meal_tokens')
       .update({ status })
       .eq('id', tokenId)
+      .eq('organization_id', orgId)
       .select()
       .single();
 

@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // POST consume a meal from package
 export async function POST(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = params;
     const body = await request.json();
     const { meal_type, notes } = body;
@@ -17,6 +21,7 @@ export async function POST(request, { params }) {
       .from('member_packages')
       .select('*')
       .eq('id', id)
+      .eq('organization_id', orgId)
       .single();
 
     if (fetchError) throw fetchError;
@@ -66,6 +71,7 @@ export async function POST(request, { params }) {
       meal_type,
       notes,
     };
+    consumptionRecord.organization_id = orgId;
 
     if (pkg.package_type === 'daily_basis') {
       // Deduct from balance based on meal price
@@ -94,6 +100,7 @@ export async function POST(request, { params }) {
         balance_after: newBalance,
         meal_type,
         description: `${meal_type.charAt(0).toUpperCase() + meal_type.slice(1)} consumption`,
+        organization_id: orgId,
       }]);
     } else {
       // For fixed meal packages (full_time, partial_full_time, partial)

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { playSound, formatDate, formatTime } from '@/lib/utils';
 import { MEAL_TYPE_LABELS, TOKEN_STATUS } from '@/lib/constants';
+import api from '@/lib/api-client';
 
 export default function VerifyPage() {
   const router = useRouter();
@@ -29,7 +30,7 @@ export default function VerifyPage() {
 
   const loadRecentTokens = async () => {
     try {
-      const response = await fetch('/api/verify?recent=true');
+      const response = await api.get('/api/verify?recent=true');
       if (response.ok) {
         const data = await response.json();
         setRecentTokens(data.tokens || []);
@@ -52,7 +53,7 @@ export default function VerifyPage() {
       setError(null);
       setToken(null);
 
-      const response = await fetch(`/api/verify?token=${encodeURIComponent(tokenInput.trim())}`);
+      const response = await api.get(`/api/verify?token=${encodeURIComponent(tokenInput.trim())}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -82,11 +83,7 @@ export default function VerifyPage() {
     try {
       setLoading(true);
 
-      const response = await fetch('/api/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tokenId: token.id }),
-      });
+      const response = await api.post('/api/verify', { tokenId: token.id });
 
       const data = await response.json();
 

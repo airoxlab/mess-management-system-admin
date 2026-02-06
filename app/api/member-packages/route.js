@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET all member meal packages
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const memberType = searchParams.get('member_type');
     const isActive = searchParams.get('is_active');
@@ -11,6 +15,7 @@ export async function GET(request) {
     let query = supabase
       .from('member_meal_packages')
       .select('*')
+      .eq('organization_id', orgId)
       .order('created_at', { ascending: false });
 
     if (memberType && memberType !== 'all') {
@@ -35,6 +40,9 @@ export async function GET(request) {
 // POST create new member meal package
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
 
     // Validate required fields
@@ -52,6 +60,7 @@ export async function POST(request) {
       .eq('member_id', body.member_id)
       .eq('member_type', body.member_type)
       .eq('is_active', true)
+      .eq('organization_id', orgId)
       .single();
 
     if (existingPackage) {
@@ -60,6 +69,8 @@ export async function POST(request) {
         { status: 400 }
       );
     }
+
+    body.organization_id = orgId;
 
     const { data, error } = await supabase
       .from('member_meal_packages')

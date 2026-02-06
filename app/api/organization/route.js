@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId, getOrgId } from '@/lib/get-org-id';
 
 // Force dynamic rendering - no caching
 export const dynamic = 'force-dynamic';
@@ -20,14 +21,27 @@ const DEFAULT_ORG = {
 };
 
 // GET - Get organization settings (fetches first org or creates default)
-export async function GET() {
+export async function GET(request) {
   try {
-    // Fetch the first organization (single-tenant)
-    const { data: organization, error } = await supabase
-      .from('organizations')
-      .select('*')
-      .limit(1)
-      .single();
+    const orgId = getOrgId(request);
+
+    let organization, error;
+
+    if (orgId) {
+      // Fetch specific organization by ID
+      ({ data: organization, error } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single());
+    } else {
+      // Fallback: fetch first organization (single-tenant)
+      ({ data: organization, error } = await supabase
+        .from('organizations')
+        .select('*')
+        .limit(1)
+        .single());
+    }
 
     if (error && error.code !== 'PGRST116') {
       throw error;
@@ -77,6 +91,9 @@ export async function GET() {
 // PUT - Update organization settings
 export async function PUT(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     let body;
     try {
       body = await request.json();
@@ -91,7 +108,7 @@ export async function PUT(request) {
     const { data: existing, error: fetchError } = await supabase
       .from('organizations')
       .select('id, settings')
-      .limit(1)
+      .eq('id', orgId)
       .single();
 
     if (fetchError && fetchError.code !== 'PGRST116') {
@@ -122,7 +139,7 @@ export async function PUT(request) {
       const { data, error } = await supabase
         .from('organizations')
         .update(updateData)
-        .eq('id', existing.id)
+        .eq('id', orgId)
         .select()
         .single();
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // Validation helpers
 const validateName = (name) => {
@@ -25,12 +26,16 @@ const VALID_MEMBER_TYPES = ['student', 'staff', 'faculty', 'guest'];
 // GET - Get single member
 export async function GET(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { memberId } = params;
 
     const { data: member, error } = await supabase
       .from('members')
       .select('*')
       .eq('id', memberId)
+      .eq('organization_id', orgId)
       .single();
 
     if (error) {
@@ -57,6 +62,9 @@ export async function GET(request, { params }) {
 // PUT - Update member
 export async function PUT(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { memberId } = params;
     const body = await request.json();
     const { name, contact, valid_until, balance_meals, status, member_type, photo_url } = body;
@@ -101,6 +109,7 @@ export async function PUT(request, { params }) {
       .from('members')
       .update(updates)
       .eq('id', memberId)
+      .eq('organization_id', orgId)
       .select()
       .single();
 
@@ -121,12 +130,16 @@ export async function PUT(request, { params }) {
 // DELETE - Delete member
 export async function DELETE(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { memberId } = params;
 
     const { error } = await supabase
       .from('members')
       .delete()
-      .eq('id', memberId);
+      .eq('id', memberId)
+      .eq('organization_id', orgId);
 
     if (error) {
       throw error;

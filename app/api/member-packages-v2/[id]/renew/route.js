@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // POST renew a package
 export async function POST(request, { params }) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { id } = params;
     const body = await request.json();
 
@@ -12,6 +16,7 @@ export async function POST(request, { params }) {
       .from('member_packages')
       .select('*')
       .eq('id', id)
+      .eq('organization_id', orgId)
       .single();
 
     if (fetchError) throw fetchError;
@@ -45,6 +50,7 @@ export async function POST(request, { params }) {
       consumed_lunch: existingPackage.consumed_lunch,
       consumed_dinner: existingPackage.consumed_dinner,
       balance: existingPackage.balance,
+      organization_id: orgId,
     }]);
 
     // Mark old package as renewed
@@ -86,6 +92,7 @@ export async function POST(request, { params }) {
       carried_over_dinner: carryOverDinner,
       status: 'active',
       is_active: true,
+      organization_id: orgId,
     };
 
     // Create new package
@@ -102,6 +109,7 @@ export async function POST(request, { params }) {
       const disabledDaysData = disabled_days.map(date => ({
         package_id: createdPackage.id,
         disabled_date: date,
+        organization_id: orgId,
       }));
 
       await supabase
@@ -126,6 +134,7 @@ export async function POST(request, { params }) {
       consumed_lunch: 0,
       consumed_dinner: 0,
       balance: createdPackage.balance,
+      organization_id: orgId,
     }]);
 
     // If daily_basis and has initial deposit, create transaction
@@ -138,6 +147,7 @@ export async function POST(request, { params }) {
         balance_before: 0,
         balance_after: newPackage.balance,
         description: 'Initial deposit (renewal)',
+        organization_id: orgId,
       }]);
     }
 

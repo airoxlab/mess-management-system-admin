@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import api from '@/lib/api-client';
 
 export default function InstructionsPage() {
   const [organization, setOrganization] = useState(null);
@@ -12,7 +13,7 @@ export default function InstructionsPage() {
 
   const loadOrganization = async () => {
     try {
-      const response = await fetch('/api/organization');
+      const response = await api.get('/api/organization');
       if (response.ok) {
         const data = await response.json();
         setOrganization(data.organization);

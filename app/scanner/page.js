@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { usePrinter } from '@/hooks/usePrinter';
 import { playSound } from '@/lib/utils';
 import { getCurrentMealType, MEAL_TYPE_LABELS } from '@/lib/constants';
+import api from '@/lib/api-client';
 
 export default function ScannerPage() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export default function ScannerPage() {
 
   const loadOrganization = async () => {
     try {
-      const response = await fetch('/api/organization');
+      const response = await api.get('/api/organization');
       if (response.ok) {
         const data = await response.json();
         setOrganization(data.organization);
@@ -53,11 +54,7 @@ export default function ScannerPage() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrData }),
-      });
+      const response = await api.post('/api/scan', { qrData });
 
       const data = await response.json();
 
@@ -86,14 +83,10 @@ export default function ScannerPage() {
 
       const mealType = getCurrentMealType();
 
-      const response = await fetch('/api/tokens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await api.post('/api/tokens', {
           memberId: member.id,
           mealType,
-        }),
-      });
+        });
 
       const data = await response.json();
 

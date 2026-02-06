@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
+import { requireOrgId } from '@/lib/get-org-id';
 
 // GET - List tokens
 export async function GET(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const status = searchParams.get('status');
@@ -12,6 +16,7 @@ export async function GET(request) {
     let query = supabase
       .from('meal_tokens')
       .select('*, member:members(id, name, member_id)')
+      .eq('organization_id', orgId)
       .eq('token_date', date)
       .order('token_no', { ascending: false });
 
@@ -42,6 +47,9 @@ export async function GET(request) {
 // POST - Generate new token
 export async function POST(request) {
   try {
+    const { orgId, error: orgError } = requireOrgId(request);
+    if (orgError) return orgError;
+
     const body = await request.json();
     const { memberId, mealType } = body;
 
@@ -56,6 +64,7 @@ export async function POST(request) {
     const { data: member, error: memberError } = await supabase
       .from('members')
       .select('*')
+      .eq('organization_id', orgId)
       .eq('id', memberId)
       .single();
 
@@ -96,6 +105,7 @@ export async function POST(request) {
     const { data: existingToken } = await supabase
       .from('meal_tokens')
       .select('id')
+      .eq('organization_id', orgId)
       .eq('member_id', memberId)
       .eq('token_date', today)
       .eq('meal_type', mealType)
@@ -113,6 +123,7 @@ export async function POST(request) {
     let { data: counter, error: counterError } = await supabase
       .from('daily_token_counter')
       .select('*')
+      .eq('organization_id', orgId)
       .eq('counter_date', today)
       .single();
 
@@ -120,7 +131,7 @@ export async function POST(request) {
       // Create new counter for today
       const { data: newCounter, error: createError } = await supabase
         .from('daily_token_counter')
-        .insert([{ counter_date: today, last_token_no: 0 }])
+        .insert([{ counter_date: today, last_token_no: 0, organization_id: orgId }])
         .select()
         .single();
 
@@ -129,6 +140,7 @@ export async function POST(request) {
         const { data: existingCounter } = await supabase
           .from('daily_token_counter')
           .select('*')
+          .eq('organization_id', orgId)
           .eq('counter_date', today)
           .single();
 
@@ -147,6 +159,7 @@ export async function POST(request) {
         id: counter?.id,
         counter_date: today,
         last_token_no: newTokenNo,
+        organization_id: orgId,
       });
 
     // Create token
@@ -160,6 +173,7 @@ export async function POST(request) {
           token_date: today,
           token_time: new Date().toTimeString().split(' ')[0],
           status: 'PENDING',
+          organization_id: orgId,
         },
       ])
       .select()
