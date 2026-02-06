@@ -313,14 +313,18 @@ export default function PackageCalendar({
                 ${today && isCurrentMonth ? 'ring-2 ring-primary-400' : ''}
               `}
             >
-              {/* Date number */}
-              <div className={`
-                text-center text-sm font-semibold mb-1
-                ${!isCurrentMonth ? 'text-gray-300'
-                  : !inRange ? 'text-gray-400'
-                  : today ? 'text-primary-600'
-                  : 'text-gray-700'}
-              `}>
+              {/* Date number - clickable to toggle whole day */}
+              <div
+                onClick={() => !readOnly && inRange && isCurrentMonth && handleDayClick(date)}
+                className={`
+                  text-center text-sm font-semibold mb-1
+                  ${!isCurrentMonth ? 'text-gray-300'
+                    : !inRange ? 'text-gray-400'
+                    : today ? 'text-primary-600'
+                    : 'text-gray-700'}
+                  ${!readOnly && inRange && isCurrentMonth ? 'cursor-pointer hover:underline' : ''}
+                `}
+              >
                 {format(date, 'd')}
               </div>
 

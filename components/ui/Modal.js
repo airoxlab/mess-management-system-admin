@@ -62,7 +62,7 @@ export function Modal({
       <div className="flex min-h-full items-center justify-center p-4">
         <div
           className={cn(
-            'relative bg-white rounded-xl shadow-xl w-full transform transition-all',
+            'relative bg-white rounded-xl shadow-xl w-full transform transition-all flex flex-col max-h-[90vh]',
             sizes[size],
             className
           )}
@@ -70,7 +70,7 @@ export function Modal({
         >
           {/* Header */}
           {(title || showClose) && (
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               {title && (
                 <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
               )}
@@ -98,11 +98,11 @@ export function Modal({
           )}
 
           {/* Body */}
-          <div className="px-6 py-4">{children}</div>
+          <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0">{children}</div>
 
           {/* Footer */}
           {footer && (
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex-shrink-0">
               {footer}
             </div>
           )}

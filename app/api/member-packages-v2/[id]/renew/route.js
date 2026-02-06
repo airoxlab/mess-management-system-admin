@@ -17,12 +17,46 @@ export async function POST(request, { params }) {
       .select('*')
       .eq('id', id)
       .eq('organization_id', orgId)
-      .single();
+      .maybeSingle();
 
     if (fetchError) throw fetchError;
 
     if (!existingPackage) {
       return NextResponse.json({ error: 'Package not found' }, { status: 404 });
+    }
+
+    // Auto-expire if end_date has passed - create expired history record
+    const today = new Date().toISOString().split('T')[0];
+    const wasAutoExpired = ['full_time', 'partial_full_time'].includes(existingPackage.package_type)
+      && existingPackage.end_date && existingPackage.end_date < today
+      && existingPackage.status === 'active';
+
+    if (wasAutoExpired) {
+      // Update DB to expired
+      await supabase
+        .from('member_packages')
+        .update({ status: 'expired', is_active: false })
+        .eq('id', id);
+
+      // Create expired history record
+      await supabase.from('package_history').insert([{
+        member_id: existingPackage.member_id,
+        member_type: existingPackage.member_type,
+        package_id: existingPackage.id,
+        action: 'expired',
+        package_type: existingPackage.package_type,
+        total_breakfast: existingPackage.total_breakfast,
+        total_lunch: existingPackage.total_lunch,
+        total_dinner: existingPackage.total_dinner,
+        consumed_breakfast: existingPackage.consumed_breakfast,
+        consumed_lunch: existingPackage.consumed_lunch,
+        consumed_dinner: existingPackage.consumed_dinner,
+        balance: existingPackage.balance,
+        organization_id: orgId,
+      }]);
+
+      existingPackage.status = 'expired';
+      existingPackage.is_active = false;
     }
 
     // Calculate remaining meals from existing package
@@ -100,9 +134,13 @@ export async function POST(request, { params }) {
       .from('member_packages')
       .insert([newPackage])
       .select()
-      .single();
+      .maybeSingle();
 
     if (insertError) throw insertError;
+
+    if (!createdPackage) {
+      throw new Error('Failed to create renewed package');
+    }
 
     // If partial_full_time, insert disabled days
     if (newPackage.package_type === 'partial_full_time' && disabled_days && disabled_days.length > 0) {

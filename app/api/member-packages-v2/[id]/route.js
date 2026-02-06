@@ -15,7 +15,7 @@ export async function GET(request, { params }) {
       .select('*')
       .eq('id', id)
       .eq('organization_id', orgId)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
 
@@ -53,6 +53,17 @@ export async function GET(request, { params }) {
       pkg.transactions = transactions || [];
     }
 
+    // Get full history for this member (all package types)
+    const { data: packageHistory } = await supabase
+      .from('package_history')
+      .select('*')
+      .eq('member_id', pkg.member_id)
+      .eq('member_type', pkg.member_type)
+      .eq('organization_id', orgId)
+      .order('created_at', { ascending: true });
+
+    pkg.history = packageHistory || [];
+
     return NextResponse.json({ package: pkg }, { status: 200 });
   } catch (error) {
     console.error('Error fetching package:', error);
@@ -75,7 +86,7 @@ export async function PUT(request, { params }) {
       .select('*')
       .eq('id', id)
       .eq('organization_id', orgId)
-      .single();
+      .maybeSingle();
 
     if (fetchError) throw fetchError;
 
@@ -147,9 +158,9 @@ export async function DELETE(request, { params }) {
       .select('*')
       .eq('id', id)
       .eq('organization_id', orgId)
-      .single();
+      .maybeSingle();
 
-    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+    if (fetchError) throw fetchError;
 
     if (!existingPackage) {
       return NextResponse.json({ error: 'Package not found' }, { status: 404 });

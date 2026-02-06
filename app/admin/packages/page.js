@@ -55,6 +55,8 @@ export default function PackagesPage() {
   const [depositModal, setDepositModal] = useState({ open: false, pkg: null });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [packageHistory, setPackageHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [formData, setFormData] = useState(getInitialFormData());
   const [renewFormData, setRenewFormData] = useState({
@@ -249,6 +251,38 @@ export default function PackagesPage() {
     };
   }, [renewFormData]);
 
+  // Helper: get all weekend dates (Sat/Sun) between start and end
+  const getWeekendDates = (startDate, endDate) => {
+    if (!startDate || !endDate) return [];
+    const weekends = [];
+    const current = new Date(startDate);
+    const end = new Date(endDate);
+    while (current <= end) {
+      const day = current.getDay();
+      if (day === 0 || day === 6) { // Sunday=0, Saturday=6
+        weekends.push(current.toISOString().split('T')[0]);
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return weekends;
+  };
+
+  // Auto-disable weekends for partial_full_time (Add Package form)
+  useEffect(() => {
+    if (formData.package_type === 'partial_full_time' && formData.start_date && formData.end_date) {
+      const weekends = getWeekendDates(formData.start_date, formData.end_date);
+      setFormData(prev => ({ ...prev, disabled_days: weekends }));
+    }
+  }, [formData.package_type, formData.start_date, formData.end_date]);
+
+  // Auto-disable weekends for partial_full_time (Renew form)
+  useEffect(() => {
+    if (renewFormData.package_type === 'partial_full_time' && renewFormData.start_date && renewFormData.end_date) {
+      const weekends = getWeekendDates(renewFormData.start_date, renewFormData.end_date);
+      setRenewFormData(prev => ({ ...prev, disabled_days: weekends }));
+    }
+  }, [renewFormData.package_type, renewFormData.start_date, renewFormData.end_date]);
+
   const handleRenewToggleDay = (dateStr) => {
     setRenewFormData(prev => ({
       ...prev,
@@ -278,6 +312,27 @@ export default function PackagesPage() {
     setMemberSearchQuery('');
     setShowMemberDropdown(false);
     setModalOpen(true);
+  };
+
+  const openViewModal = async (pkg) => {
+    setViewModal({ open: true, pkg });
+    setPackageHistory([]);
+    setLoadingHistory(true);
+    try {
+      const response = await api.get(`/api/member-packages-v2/${pkg.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setPackageHistory(data.package?.history || []);
+        // Update pkg with full data including transactions
+        if (data.package) {
+          setViewModal({ open: true, pkg: { ...pkg, ...data.package } });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching package history:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
   };
 
   const openEditModal = (pkg) => {
@@ -312,14 +367,16 @@ export default function PackagesPage() {
     const member = getMemberInfo(pkg.member_id, pkg.member_type);
     setSelectedMember(member);
 
-    // Calculate remaining meals
-    const remainingBreakfast = Math.max(0, pkg.total_breakfast - pkg.consumed_breakfast);
-    const remainingLunch = Math.max(0, pkg.total_lunch - pkg.consumed_lunch);
-    const remainingDinner = Math.max(0, pkg.total_dinner - pkg.consumed_dinner);
+    const isExpired = getRealTimeStatus(pkg) === 'expired';
+
+    // Expired packages have no remaining meals - they're gone
+    const remainingBreakfast = isExpired ? 0 : Math.max(0, pkg.total_breakfast - pkg.consumed_breakfast);
+    const remainingLunch = isExpired ? 0 : Math.max(0, pkg.total_lunch - pkg.consumed_lunch);
+    const remainingDinner = isExpired ? 0 : Math.max(0, pkg.total_dinner - pkg.consumed_dinner);
 
     // Pre-fill all data from the original package
     setRenewFormData({
-      carry_over: true,
+      carry_over: !isExpired,
       package_type: pkg.package_type,
       total_breakfast: pkg.total_breakfast || 0,
       total_lunch: pkg.total_lunch || 0,
@@ -327,11 +384,11 @@ export default function PackagesPage() {
       breakfast_enabled: pkg.breakfast_enabled || false,
       lunch_enabled: pkg.lunch_enabled || false,
       dinner_enabled: pkg.dinner_enabled || false,
-      breakfast_price: pkg.breakfast_price || '',
-      lunch_price: pkg.lunch_price || '',
-      dinner_price: pkg.dinner_price || '',
-      price: pkg.price || '',
-      balance: pkg.balance || '',
+      breakfast_price: pkg.breakfast_price ?? '',
+      lunch_price: pkg.lunch_price ?? '',
+      dinner_price: pkg.dinner_price ?? '',
+      price: pkg.price ?? '',
+      balance: pkg.balance ?? '',
       start_date: '',
       end_date: '',
       disabled_days: [],
@@ -649,6 +706,18 @@ export default function PackagesPage() {
     }
   };
 
+  // Get the real-time status of a package based on actual date
+  const getRealTimeStatus = (pkg) => {
+    if (pkg.status === 'renewed') return 'renewed';
+    if (pkg.status === 'expired' || !pkg.is_active) return 'expired';
+    // For full_time and partial_full_time, check if end_date has passed
+    if (['full_time', 'partial_full_time'].includes(pkg.package_type) && pkg.end_date) {
+      const today = new Date().toISOString().split('T')[0];
+      if (pkg.end_date < today) return 'expired';
+    }
+    return pkg.status;
+  };
+
   const getStatusBadgeColor = (status) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-700';
@@ -670,13 +739,17 @@ export default function PackagesPage() {
     return { total: totalMeals, consumed: consumedMeals, percentage };
   };
 
-  // Filter packages
+  // Filter packages - hide renewed packages (they only show in logs)
   const filteredPackages = packages.filter(pkg => {
+    // Renewed packages are historical - only visible in Package Logs
+    if (pkg.status === 'renewed') return false;
+
     if (typeFilter !== 'all' && pkg.member_type !== typeFilter) return false;
     if (packageTypeFilter !== 'all' && pkg.package_type !== packageTypeFilter) return false;
     if (statusFilter !== 'all') {
-      if (statusFilter === 'active' && (!pkg.is_active || pkg.status !== 'active')) return false;
-      if (statusFilter === 'inactive' && pkg.is_active) return false;
+      const realStatus = getRealTimeStatus(pkg);
+      if (statusFilter === 'active' && realStatus !== 'active') return false;
+      if (statusFilter === 'inactive' && realStatus === 'active') return false;
     }
 
     if (searchQuery) {
@@ -856,22 +929,24 @@ export default function PackagesPage() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${getStatusBadgeColor(pkg.status)}`}>
-                        {PACKAGE_STATUS_LABELS[pkg.status] || pkg.status}
-                      </span>
+                      {(() => {
+                        const realStatus = getRealTimeStatus(pkg);
+                        return (
+                          <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${getStatusBadgeColor(realStatus)}`}>
+                            {PACKAGE_STATUS_LABELS[realStatus] || realStatus}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end space-x-1">
-                        <button onClick={() => setViewModal({ open: true, pkg })} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="View">
+                        <button onClick={() => openViewModal(pkg)} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="View">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                         </button>
-                        {pkg.status === 'active' && (
+                        {getRealTimeStatus(pkg) === 'active' && (
                           <>
                             <button onClick={() => openEditModal(pkg)} className="p-1 text-primary-600 hover:bg-primary-50 rounded" title="Edit">
                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                            </button>
-                            <button onClick={() => openRenewModal(pkg)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Renew">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                             </button>
                             {pkg.package_type === 'daily_basis' && (
                               <button onClick={() => openDepositModal(pkg)} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded" title="Add Deposit">
@@ -879,6 +954,11 @@ export default function PackagesPage() {
                               </button>
                             )}
                           </>
+                        )}
+                        {['active', 'expired'].includes(getRealTimeStatus(pkg)) && pkg.package_type !== 'daily_basis' && (
+                          <button onClick={() => openRenewModal(pkg)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Renew">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                          </button>
                         )}
                         <button onClick={() => setDeleteModal({ open: true, pkg })} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Delete">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -1113,47 +1193,6 @@ export default function PackagesPage() {
                       required
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    {formData.breakfast_enabled && (
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Breakfast Price</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formData.breakfast_price}
-                          onChange={(e) => setFormData(prev => ({ ...prev, breakfast_price: e.target.value }))}
-                          placeholder="150"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                      </div>
-                    )}
-                    {formData.lunch_enabled && (
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Lunch Price</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formData.lunch_price}
-                          onChange={(e) => setFormData(prev => ({ ...prev, lunch_price: e.target.value }))}
-                          placeholder="200"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                      </div>
-                    )}
-                    {formData.dinner_enabled && (
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Dinner Price</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formData.dinner_price}
-                          onChange={(e) => setFormData(prev => ({ ...prev, dinner_price: e.target.value }))}
-                          placeholder="200"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                      </div>
-                    )}
-                  </div>
                 </div>
               )}
 
@@ -1241,124 +1280,136 @@ export default function PackagesPage() {
       </Modal>
 
       {/* View Modal */}
-      <Modal isOpen={viewModal.open} onClose={() => setViewModal({ open: false, pkg: null })} title="Package Details" size="lg">
+      <Modal
+        isOpen={viewModal.open}
+        onClose={() => setViewModal({ open: false, pkg: null })}
+        title="Package Details"
+        size="lg"
+        footer={viewModal.pkg && (
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => setViewModal({ open: false, pkg: null })} className="flex-1">
+              Close
+            </Button>
+            {['active', 'expired'].includes(getRealTimeStatus(viewModal.pkg)) && (
+              <Button onClick={() => { setViewModal({ open: false, pkg: null }); openRenewModal(viewModal.pkg); }} className="flex-1">
+                Renew Package
+              </Button>
+            )}
+          </div>
+        )}
+      >
         {viewModal.pkg && (() => {
           const pkg = viewModal.pkg;
           const member = getMemberInfo(pkg.member_id, pkg.member_type);
           const progress = getPackageProgress(pkg);
 
           return (
-            <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Member Information</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-gray-500">Name:</span>
-                    <p className="font-medium">{member?.full_name || 'Unknown'}</p>
+            <div className="space-y-3">
+              {/* Member + Package Info - compact row */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{member?.full_name || 'Unknown'}</div>
+                      <div className="text-xs text-gray-500">{member?.roll_number || member?.employee_id || '-'}</div>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-gray-500">ID:</span>
-                    <p className="font-medium">{member?.roll_number || member?.employee_id || '-'}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${getPackageTypeBadgeColor(pkg.package_type)}`}>{PACKAGE_TYPE_LABELS[pkg.package_type]}</span>
+                    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${getStatusBadgeColor(getRealTimeStatus(pkg))}`}>{PACKAGE_STATUS_LABELS[getRealTimeStatus(pkg)]}</span>
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Package Details</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-gray-500">Type:</span>
-                    <p><span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${getPackageTypeBadgeColor(pkg.package_type)}`}>{PACKAGE_TYPE_LABELS[pkg.package_type]}</span></p>
+                {(pkg.start_date || pkg.price > 0) && (
+                  <div className="flex items-center gap-4 mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
+                    {pkg.start_date && <span>Period: <strong className="text-gray-700">{pkg.start_date} to {pkg.end_date}</strong></span>}
+                    {pkg.price > 0 && <span>Price: <strong className="text-gray-700">{formatCurrency(pkg.price)}</strong></span>}
                   </div>
-                  <div>
-                    <span className="text-gray-500">Status:</span>
-                    <p><span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${getStatusBadgeColor(pkg.status)}`}>{PACKAGE_STATUS_LABELS[pkg.status]}</span></p>
-                  </div>
-                  {pkg.start_date && (
-                    <div>
-                      <span className="text-gray-500">Period:</span>
-                      <p className="font-medium">{pkg.start_date} to {pkg.end_date}</p>
-                    </div>
-                  )}
-                  {pkg.price > 0 && (
-                    <div>
-                      <span className="text-gray-500">Price:</span>
-                      <p className="font-medium">{formatCurrency(pkg.price)}</p>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
 
               {pkg.package_type === 'daily_basis' ? (
-                <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
-                  <h4 className="text-sm font-medium text-gray-700 mb-3">Balance & Prices</h4>
-                  <div className="text-center mb-4">
-                    <span className="text-3xl font-bold text-indigo-600">{formatCurrency(pkg.balance || 0)}</span>
-                    <p className="text-xs text-gray-500">Current Balance</p>
+                <>
+                  <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-medium text-gray-700">Current Balance</h4>
+                      <span className="text-xl font-bold text-indigo-600">{formatCurrency(pkg.balance || 0)}</span>
+                    </div>
+                    <div className="flex gap-2 mt-2 text-xs text-gray-500">
+                      <span>Meals: </span>
+                      {pkg.breakfast_enabled && <span className="text-amber-600 font-medium">Breakfast</span>}
+                      {pkg.lunch_enabled && <span className="text-orange-600 font-medium">Lunch</span>}
+                      {pkg.dinner_enabled && <span className="text-indigo-600 font-medium">Dinner</span>}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                    {pkg.breakfast_enabled && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="text-amber-600 font-medium">Breakfast</div>
-                        <div>{formatCurrency(pkg.breakfast_price || 0)}</div>
+
+                  {/* Transaction History */}
+                  {pkg.transactions && pkg.transactions.length > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Transaction History</h4>
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {pkg.transactions.map((txn, idx) => (
+                          <div key={txn.id || idx} className="flex items-center justify-between bg-white rounded border border-gray-200 px-2.5 py-1.5 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-1.5 h-1.5 rounded-full ${txn.transaction_type === 'deposit' ? 'bg-green-500' : 'bg-red-500'}`} />
+                              <span className="text-gray-700 font-medium capitalize">{txn.transaction_type}</span>
+                              {txn.description && <span className="text-gray-400">- {txn.description}</span>}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`font-semibold ${txn.transaction_type === 'deposit' ? 'text-green-600' : 'text-red-600'}`}>
+                                {txn.transaction_type === 'deposit' ? '+' : '-'}{formatCurrency(txn.amount)}
+                              </span>
+                              <span className="text-gray-400">
+                                {new Date(txn.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                    {pkg.lunch_enabled && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="text-orange-600 font-medium">Lunch</div>
-                        <div>{formatCurrency(pkg.lunch_price || 0)}</div>
-                      </div>
-                    )}
-                    {pkg.dinner_enabled && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="text-indigo-600 font-medium">Dinner</div>
-                        <div>{formatCurrency(pkg.dinner_price || 0)}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="bg-primary-50 rounded-lg p-4 border border-primary-200">
-                  <h4 className="text-sm font-medium text-gray-700 mb-3">Meal Progress</h4>
-                  <div className="space-y-3">
+                <div className="bg-primary-50 rounded-lg p-3 border border-primary-200">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Meal Progress</h4>
+                  <div className="space-y-2">
                     {pkg.breakfast_enabled && (
                       <div>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-amber-700">Breakfast</span>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-amber-700 font-medium">Breakfast</span>
                           <span>{pkg.consumed_breakfast} / {pkg.total_breakfast}</span>
                         </div>
-                        <div className="h-2 bg-gray-200 rounded-full">
-                          <div className="h-full bg-amber-500 rounded-full" style={{ width: `${(pkg.consumed_breakfast / pkg.total_breakfast) * 100}%` }} />
+                        <div className="h-1.5 bg-gray-200 rounded-full">
+                          <div className="h-full bg-amber-500 rounded-full" style={{ width: `${pkg.total_breakfast > 0 ? (pkg.consumed_breakfast / pkg.total_breakfast) * 100 : 0}%` }} />
                         </div>
                       </div>
                     )}
                     {pkg.lunch_enabled && (
                       <div>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-orange-700">Lunch</span>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-orange-700 font-medium">Lunch</span>
                           <span>{pkg.consumed_lunch} / {pkg.total_lunch}</span>
                         </div>
-                        <div className="h-2 bg-gray-200 rounded-full">
-                          <div className="h-full bg-orange-500 rounded-full" style={{ width: `${(pkg.consumed_lunch / pkg.total_lunch) * 100}%` }} />
+                        <div className="h-1.5 bg-gray-200 rounded-full">
+                          <div className="h-full bg-orange-500 rounded-full" style={{ width: `${pkg.total_lunch > 0 ? (pkg.consumed_lunch / pkg.total_lunch) * 100 : 0}%` }} />
                         </div>
                       </div>
                     )}
                     {pkg.dinner_enabled && (
                       <div>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-indigo-700">Dinner</span>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-indigo-700 font-medium">Dinner</span>
                           <span>{pkg.consumed_dinner} / {pkg.total_dinner}</span>
                         </div>
-                        <div className="h-2 bg-gray-200 rounded-full">
-                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${(pkg.consumed_dinner / pkg.total_dinner) * 100}%` }} />
+                        <div className="h-1.5 bg-gray-200 rounded-full">
+                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pkg.total_dinner > 0 ? (pkg.consumed_dinner / pkg.total_dinner) * 100 : 0}%` }} />
                         </div>
                       </div>
                     )}
                   </div>
                   {progress && (
-                    <div className="mt-4 pt-3 border-t border-primary-200 text-center">
-                      <span className="text-2xl font-bold text-primary-700">{progress.consumed} / {progress.total}</span>
-                      <p className="text-xs text-gray-500">Total Meals Consumed</p>
+                    <div className="mt-2 pt-2 border-t border-primary-200 text-center">
+                      <span className="text-lg font-bold text-primary-700">{progress.consumed} / {progress.total}</span>
+                      <span className="text-xs text-gray-500 ml-1">meals consumed</span>
                     </div>
                   )}
                 </div>
@@ -1366,19 +1417,68 @@ export default function PackagesPage() {
 
               {pkg.carried_over_from_package_id && (
                 <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                  Carried over: {pkg.carried_over_breakfast} breakfast, {pkg.carried_over_lunch} lunch, {pkg.carried_over_dinner} dinner from previous package
+                  Carried over: {pkg.carried_over_breakfast} breakfast, {pkg.carried_over_lunch} lunch, {pkg.carried_over_dinner} dinner
                 </div>
               )}
 
-              <div className="flex gap-3 pt-2">
-                <Button variant="outline" onClick={() => setViewModal({ open: false, pkg: null })} className="flex-1">
-                  Close
-                </Button>
-                {pkg.status === 'active' && (
-                  <Button onClick={() => { setViewModal({ open: false, pkg: null }); openRenewModal(pkg); }} className="flex-1">
-                    Renew Package
-                  </Button>
-                )}
+              {/* Package Logs */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Package Logs</h4>
+                {(() => {
+                  // For daily_basis, only show logs for this specific package
+                  const filteredLogs = pkg.package_type === 'daily_basis'
+                    ? packageHistory.filter(log => log.package_id === pkg.id)
+                    : packageHistory;
+                  return loadingHistory ? (
+                  <div className="text-center text-sm text-gray-400 py-2">Loading logs...</div>
+                ) : filteredLogs.length === 0 ? (
+                  <div className="text-center text-sm text-gray-400 py-2">No logs found</div>
+                ) : (
+                  <div className="relative pl-6 space-y-2">
+                    <div className="absolute left-2 top-1 bottom-1 w-0.5 bg-gray-300" />
+                    {filteredLogs.map((log, idx) => {
+                      const actionConfig = {
+                        created: { color: 'bg-green-500', label: 'Package Created', textColor: 'text-green-700' },
+                        expired: { color: 'bg-red-500', label: 'Package Expired', textColor: 'text-red-700' },
+                        renewed: { color: 'bg-blue-500', label: 'Package Renewed', textColor: 'text-blue-700' },
+                      };
+                      const config = actionConfig[log.action] || { color: 'bg-gray-500', label: log.action, textColor: 'text-gray-700' };
+
+                      return (
+                        <div key={log.id || idx} className="relative">
+                          <div className={`absolute -left-4 top-1 w-3 h-3 rounded-full border-2 border-white ${config.color}`} />
+                          <div className="bg-white rounded border border-gray-200 p-2">
+                            <div className="flex items-center justify-between">
+                              <span className={`text-xs font-semibold ${config.textColor}`}>{config.label}</span>
+                              <span className="text-xs text-gray-400">
+                                {new Date(log.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {' '}
+                                {new Date(log.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs text-gray-500 mt-0.5">
+                              <span>{PACKAGE_TYPE_LABELS[log.package_type]}</span>
+                              {log.package_type === 'daily_basis' ? (
+                                <span>| Balance: {formatCurrency(log.balance || 0)}</span>
+                              ) : (
+                                <>
+                                  {log.action === 'created' && (log.total_breakfast > 0 || log.total_lunch > 0 || log.total_dinner > 0) && (
+                                    <span>| Meals: B:{log.total_breakfast} L:{log.total_lunch} D:{log.total_dinner}</span>
+                                  )}
+                                  {(log.action === 'expired' || log.action === 'renewed') && (
+                                    <span>| Used: B:{log.consumed_breakfast}/{log.total_breakfast} L:{log.consumed_lunch}/{log.total_lunch} D:{log.consumed_dinner}/{log.total_dinner}</span>
+                                  )}
+                                  {log.balance > 0 && <span>| Balance: {formatCurrency(log.balance)}</span>}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+                })()}
               </div>
             </div>
           );
@@ -1491,26 +1591,6 @@ export default function PackagesPage() {
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Initial Deposit (PKR)</label>
                       <input type="number" min="0" value={renewFormData.balance} onChange={(e) => setRenewFormData(prev => ({ ...prev, balance: e.target.value }))} placeholder="e.g., 10000" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" required />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {renewFormData.breakfast_enabled && (
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">B. Price</label>
-                          <input type="number" min="0" value={renewFormData.breakfast_price} onChange={(e) => setRenewFormData(prev => ({ ...prev, breakfast_price: e.target.value }))} placeholder="150" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
-                        </div>
-                      )}
-                      {renewFormData.lunch_enabled && (
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">L. Price</label>
-                          <input type="number" min="0" value={renewFormData.lunch_price} onChange={(e) => setRenewFormData(prev => ({ ...prev, lunch_price: e.target.value }))} placeholder="200" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
-                        </div>
-                      )}
-                      {renewFormData.dinner_enabled && (
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">D. Price</label>
-                          <input type="number" min="0" value={renewFormData.dinner_price} onChange={(e) => setRenewFormData(prev => ({ ...prev, dinner_price: e.target.value }))} placeholder="200" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
-                        </div>
-                      )}
                     </div>
                   </>
                 )}

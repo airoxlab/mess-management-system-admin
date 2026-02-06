@@ -8,6 +8,46 @@ export async function GET(request) {
     const { orgId, error: orgError } = requireOrgId(request);
     if (orgError) return orgError;
 
+    // Auto-expire packages whose end_date has passed
+    const today = new Date().toISOString().split('T')[0];
+
+    // First, find packages that need to be expired (to create history records)
+    const { data: expiredPackages } = await supabase
+      .from('member_packages')
+      .select('*')
+      .eq('organization_id', orgId)
+      .eq('is_active', true)
+      .eq('status', 'active')
+      .in('package_type', ['full_time', 'partial_full_time'])
+      .lt('end_date', today);
+
+    if (expiredPackages && expiredPackages.length > 0) {
+      // Update them to expired
+      const expiredIds = expiredPackages.map(p => p.id);
+      await supabase
+        .from('member_packages')
+        .update({ status: 'expired', is_active: false })
+        .in('id', expiredIds);
+
+      // Create history records for each expired package
+      const historyRecords = expiredPackages.map(pkg => ({
+        organization_id: orgId,
+        member_id: pkg.member_id,
+        member_type: pkg.member_type,
+        package_id: pkg.id,
+        action: 'expired',
+        package_type: pkg.package_type,
+        total_breakfast: pkg.total_breakfast,
+        total_lunch: pkg.total_lunch,
+        total_dinner: pkg.total_dinner,
+        consumed_breakfast: pkg.consumed_breakfast,
+        consumed_lunch: pkg.consumed_lunch,
+        consumed_dinner: pkg.consumed_dinner,
+        balance: pkg.balance,
+      }));
+      await supabase.from('package_history').insert(historyRecords);
+    }
+
     const { searchParams } = new URL(request.url);
     const memberType = searchParams.get('member_type');
     const packageType = searchParams.get('package_type');
@@ -115,6 +155,44 @@ export async function POST(request) {
       }
     }
 
+    // Auto-expire any packages whose end_date has passed for this member
+    const today = new Date().toISOString().split('T')[0];
+    const { data: memberExpiredPkgs } = await supabase
+      .from('member_packages')
+      .select('*')
+      .eq('organization_id', orgId)
+      .eq('member_id', body.member_id)
+      .eq('member_type', body.member_type)
+      .eq('is_active', true)
+      .eq('status', 'active')
+      .in('package_type', ['full_time', 'partial_full_time'])
+      .lt('end_date', today);
+
+    if (memberExpiredPkgs && memberExpiredPkgs.length > 0) {
+      const expIds = memberExpiredPkgs.map(p => p.id);
+      await supabase
+        .from('member_packages')
+        .update({ status: 'expired', is_active: false })
+        .in('id', expIds);
+
+      const historyRecords = memberExpiredPkgs.map(pkg => ({
+        organization_id: orgId,
+        member_id: pkg.member_id,
+        member_type: pkg.member_type,
+        package_id: pkg.id,
+        action: 'expired',
+        package_type: pkg.package_type,
+        total_breakfast: pkg.total_breakfast,
+        total_lunch: pkg.total_lunch,
+        total_dinner: pkg.total_dinner,
+        consumed_breakfast: pkg.consumed_breakfast,
+        consumed_lunch: pkg.consumed_lunch,
+        consumed_dinner: pkg.consumed_dinner,
+        balance: pkg.balance,
+      }));
+      await supabase.from('package_history').insert(historyRecords);
+    }
+
     // Check if member already has an active package
     const { data: existingPackage } = await supabase
       .from('member_packages')
@@ -124,7 +202,7 @@ export async function POST(request) {
       .eq('member_type', body.member_type)
       .eq('is_active', true)
       .eq('status', 'active')
-      .single();
+      .maybeSingle();
 
     if (existingPackage) {
       return NextResponse.json(
@@ -154,7 +232,7 @@ export async function POST(request) {
       .from('member_packages')
       .insert([insertData])
       .select()
-      .single();
+      .maybeSingle();
 
     if (insertError) throw insertError;
 
