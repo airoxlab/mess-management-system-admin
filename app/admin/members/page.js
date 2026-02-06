@@ -796,12 +796,8 @@ export default function MembersPage() {
           </div>
           <div className="border-t pt-4 mt-4">
             <h4 className="font-medium text-gray-900 mb-3">Admin Section</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Membership ID" name="membership_id" value={formData.membership_id} onChange={handleFormChange} />
-              <Input label="Fee Received" name="fee_received" type="number" value={formData.fee_received} onChange={handleFormChange} />
-              <Input label="Receipt No" name="receipt_no" value={formData.receipt_no} onChange={handleFormChange} />
-            </div>
-            <div className="mt-3">
               <Select label="Status" name="status" value={formData.status} onChange={handleFormChange} options={[{ value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' }, { value: 'rejected', label: 'Rejected' }]} />
             </div>
           </div>
@@ -857,12 +853,8 @@ export default function MembersPage() {
           </div>
           <div className="border-t pt-4 mt-4">
             <h4 className="font-medium text-gray-900 mb-3">Admin Section</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Membership ID" name="membership_id" value={formData.membership_id} onChange={handleFormChange} />
-              <Select label="Fee Category" name="fee_category" value={formData.fee_category} onChange={handleFormChange} options={[{ value: 'subsidized', label: 'Subsidized' }, { value: 'standard', label: 'Standard' }]} />
-              <Input label="Receipt No" name="receipt_no" value={formData.receipt_no} onChange={handleFormChange} />
-            </div>
-            <div className="mt-3">
               <Select label="Status" name="status" value={formData.status} onChange={handleFormChange} options={[{ value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' }, { value: 'rejected', label: 'Rejected' }]} />
             </div>
           </div>
@@ -953,12 +945,7 @@ export default function MembersPage() {
               <Input label="Membership ID" name="membership_id" value={formData.membership_id} onChange={handleFormChange} />
               <Input label="Membership Start Date" name="membership_start_date" type="date" value={formData.membership_start_date} onChange={handleFormChange} />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-              <Input label="Fee Amount" name="fee_amount" type="number" value={formData.fee_amount} onChange={handleFormChange} />
-              <Input label="Additional Discount" name="additional_discount" type="number" value={formData.additional_discount} onChange={handleFormChange} />
-              <Input label="Receipt No" name="receipt_no" value={formData.receipt_no} onChange={handleFormChange} />
-            </div>
-            <div className="mt-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
               <Select label="Status" name="status" value={formData.status} onChange={handleFormChange} options={[{ value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' }, { value: 'rejected', label: 'Rejected' }]} />
             </div>
           </div>

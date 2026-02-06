@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { formatDate, formatTime } from '@/lib/utils';
 import api from '@/lib/api-client';
@@ -69,6 +69,46 @@ function getMemberSummary(member) {
   return { collected, skipped, missed, pending };
 }
 
+// Determine which meal is currently active based on time and settings
+// Fully dynamic - works with any time configuration from settings
+function getActiveMeal(mealTimings) {
+  if (!mealTimings) return null;
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const toMin = (t) => {
+    if (!t) return 0;
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const meals = [
+    { name: 'breakfast', start: toMin(mealTimings.breakfast_start), end: toMin(mealTimings.breakfast_end) },
+    { name: 'lunch', start: toMin(mealTimings.lunch_start), end: toMin(mealTimings.lunch_end) },
+    { name: 'dinner', start: toMin(mealTimings.dinner_start), end: toMin(mealTimings.dinner_end) },
+  ];
+
+  // 1. Check if current time is within any meal's active range
+  for (const meal of meals) {
+    if (meal.start <= meal.end) {
+      // Normal range (e.g., 07:00 - 09:00)
+      if (currentMinutes >= meal.start && currentMinutes < meal.end) return meal.name;
+    } else {
+      // Overnight range (e.g., 22:00 - 06:00)
+      if (currentMinutes >= meal.start || currentMinutes < meal.end) return meal.name;
+    }
+  }
+
+  // 2. Not in any meal — find next upcoming meal
+  const sortedMeals = [...meals].sort((a, b) => a.start - b.start);
+  for (const meal of sortedMeals) {
+    if (meal.start > currentMinutes) return meal.name;
+  }
+
+  // 3. Past all meals today — return first meal of next day
+  return sortedMeals[0].name;
+}
+
 export default function MealStatusPage() {
   const [members, setMembers] = useState([]);
   const [stats, setStats] = useState(null);
@@ -81,8 +121,49 @@ export default function MealStatusPage() {
   const [datePreset, setDatePreset] = useState('today');
   const [customDate, setCustomDate] = useState(getToday());
   const [expandedMembers, setExpandedMembers] = useState(new Set());
+  const [mealTimings, setMealTimings] = useState(null);
+  const [activeMeal, setActiveMeal] = useState(null);
+  const mealTimingsRef = useRef(null);
 
   const isSingleDay = dates.length <= 1;
+
+  // Fetch meal timings from organization settings
+  useEffect(() => {
+    const fetchTimings = async () => {
+      try {
+        const res = await api.get(`/api/organization?t=${Date.now()}`);
+        if (res.ok) {
+          const text = await res.text();
+          const data = text ? JSON.parse(text) : {};
+          if (data.organization) {
+            const s = data.organization.settings || {};
+            const timings = {
+              breakfast_start: s.breakfast_start || '07:00',
+              breakfast_end: s.breakfast_end || '09:00',
+              lunch_start: s.lunch_start || '12:00',
+              lunch_end: s.lunch_end || '14:00',
+              dinner_start: s.dinner_start || '19:00',
+              dinner_end: s.dinner_end || '21:00',
+            };
+            mealTimingsRef.current = timings;
+            setMealTimings(timings);
+            setActiveMeal(getActiveMeal(timings));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch meal timings:', err);
+      }
+    };
+    fetchTimings();
+
+    // Update active meal every minute using ref (always has latest timings)
+    const interval = setInterval(() => {
+      if (mealTimingsRef.current) {
+        setActiveMeal(getActiveMeal(mealTimingsRef.current));
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchMealStatus = useCallback(async (startDate, endDate) => {
     setLoading(true);
@@ -386,12 +467,13 @@ export default function MealStatusPage() {
           <p className="text-gray-400 text-sm mt-1">Try adjusting your filters</p>
         </div>
       ) : isSingleDay ? (
-        <SingleDayView members={filteredMembers} />
+        <SingleDayView members={filteredMembers} activeMeal={activeMeal} />
       ) : (
         <RangeView
           members={filteredMembers}
           expandedMembers={expandedMembers}
           toggleMember={toggleMember}
+          activeMeal={activeMeal}
         />
       )}
     </div>
@@ -399,7 +481,17 @@ export default function MealStatusPage() {
 }
 
 /* ====================== Single Day Table View ====================== */
-function SingleDayView({ members }) {
+function SingleDayView({ members, activeMeal }) {
+  const mealHeaderClass = (meal) =>
+    `text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider ${
+      activeMeal === meal
+        ? 'bg-green-200 text-green-900 border-b-2 border-green-500'
+        : 'text-gray-500'
+    }`;
+
+  const mealCellClass = (meal) =>
+    `px-4 py-3 text-center ${activeMeal === meal ? 'bg-green-100' : ''}`;
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="overflow-x-auto">
@@ -409,9 +501,9 @@ function SingleDayView({ members }) {
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Member</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Breakfast</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lunch</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Dinner</th>
+              <th className={mealHeaderClass('breakfast')}>Breakfast</th>
+              <th className={mealHeaderClass('lunch')}>Lunch</th>
+              <th className={mealHeaderClass('dinner')}>Dinner</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -435,13 +527,13 @@ function SingleDayView({ members }) {
                   <td className="px-4 py-3">
                     <p className="text-sm text-gray-600 max-w-[200px] truncate">{member.department}</p>
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className={mealCellClass('breakfast')}>
                     <StatusBadge meal={day.breakfast} />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className={mealCellClass('lunch')}>
                     <StatusBadge meal={day.lunch} />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className={mealCellClass('dinner')}>
                     <StatusBadge meal={day.dinner} />
                   </td>
                 </tr>
@@ -455,7 +547,7 @@ function SingleDayView({ members }) {
 }
 
 /* ====================== Range (Multi-Day) Card View ====================== */
-function RangeView({ members, expandedMembers, toggleMember }) {
+function RangeView({ members, expandedMembers, toggleMember, activeMeal }) {
   return (
     <div className="space-y-3">
       {members.map((member) => {
@@ -495,22 +587,22 @@ function RangeView({ members, expandedMembers, toggleMember }) {
                       {summary.collected}
                     </span>
                   )}
+                  {summary.pending > 0 && (
+                    <span className="flex items-center gap-1 text-green-600">
+                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                      {summary.pending}
+                    </span>
+                  )}
                   {summary.skipped > 0 && (
-                    <span className="flex items-center gap-1 text-slate-500">
-                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span className="flex items-center gap-1 text-red-500">
+                      <span className="w-2 h-2 rounded-full bg-red-500"></span>
                       {summary.skipped}
                     </span>
                   )}
                   {summary.missed > 0 && (
-                    <span className="flex items-center gap-1 text-red-500">
-                      <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                    <span className="flex items-center gap-1 text-orange-500">
+                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>
                       {summary.missed}
-                    </span>
-                  )}
-                  {summary.pending > 0 && (
-                    <span className="flex items-center gap-1 text-amber-600">
-                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                      {summary.pending}
                     </span>
                   )}
                 </div>
@@ -528,9 +620,9 @@ function RangeView({ members, expandedMembers, toggleMember }) {
                 {/* Column headers */}
                 <div className="grid grid-cols-4 px-4 py-2 bg-gray-50 border-b border-gray-200">
                   <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</span>
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Breakfast</span>
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Lunch</span>
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Dinner</span>
+                  <span className={`text-xs font-semibold uppercase tracking-wider text-center rounded px-2 py-1 ${activeMeal === 'breakfast' ? 'bg-green-200 text-green-900' : 'text-gray-500'}`}>Breakfast</span>
+                  <span className={`text-xs font-semibold uppercase tracking-wider text-center rounded px-2 py-1 ${activeMeal === 'lunch' ? 'bg-green-200 text-green-900' : 'text-gray-500'}`}>Lunch</span>
+                  <span className={`text-xs font-semibold uppercase tracking-wider text-center rounded px-2 py-1 ${activeMeal === 'dinner' ? 'bg-green-200 text-green-900' : 'text-gray-500'}`}>Dinner</span>
                 </div>
 
                 {member.days.map((day, idx) => (
@@ -542,13 +634,13 @@ function RangeView({ members, expandedMembers, toggleMember }) {
                       <p className="text-sm font-medium text-gray-700">{formatDate(day.date, 'MMM dd')}</p>
                       <p className="text-xs text-gray-400">{formatDate(day.date, 'EEEE')}</p>
                     </div>
-                    <div className="text-center">
+                    <div className={`text-center ${activeMeal === 'breakfast' ? 'bg-green-100 rounded' : ''}`}>
                       <StatusBadge meal={day.breakfast} compact />
                     </div>
-                    <div className="text-center">
+                    <div className={`text-center ${activeMeal === 'lunch' ? 'bg-green-100 rounded' : ''}`}>
                       <StatusBadge meal={day.lunch} compact />
                     </div>
-                    <div className="text-center">
+                    <div className={`text-center ${activeMeal === 'dinner' ? 'bg-green-100 rounded' : ''}`}>
                       <StatusBadge meal={day.dinner} compact />
                     </div>
                   </div>
@@ -583,8 +675,8 @@ function StatusBadge({ meal, compact = false }) {
 
     case 'skipped':
       return (
-        <span className="inline-flex items-center gap-1.5 text-slate-500">
-          <span className={`flex items-center justify-center rounded-full bg-slate-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+        <span className="inline-flex items-center gap-1.5 text-red-600">
+          <span className={`flex items-center justify-center rounded-full bg-red-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
             <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
             </svg>
@@ -595,13 +687,13 @@ function StatusBadge({ meal, compact = false }) {
 
     case 'pending':
       return (
-        <span className="inline-flex items-center gap-1.5 text-amber-600">
-          <span className={`flex items-center justify-center rounded-full bg-amber-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+        <span className="inline-flex items-center gap-1.5 text-green-700">
+          <span className={`flex items-center justify-center rounded-full bg-green-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
             <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
             </svg>
           </span>
-          <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Pending</span>
+          <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Confirmed</span>
         </span>
       );
 

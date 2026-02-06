@@ -204,6 +204,7 @@ create table public.organizations (
   lost_card_fee numeric(10, 2) null default 500,
   support_phone character varying(50) null,
   support_whatsapp character varying(50) null,
+  meal_skip_deadline integer not null default 30,
   constraint organizations_pkey primary key (id),
   constraint organizations_slug_key unique (slug)
 ) TABLESPACE pg_default;

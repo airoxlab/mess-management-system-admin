@@ -29,6 +29,8 @@ export default function SettingsPage() {
     lunch_end: '14:00',
     dinner_start: '19:00',
     dinner_end: '21:00',
+    // Meal Skip Deadline (minutes before meal start)
+    meal_skip_deadline: 30,
   });
 
   useEffect(() => {
@@ -71,6 +73,7 @@ export default function SettingsPage() {
           lunch_end: orgSettings.lunch_end || '14:00',
           dinner_start: orgSettings.dinner_start || '19:00',
           dinner_end: orgSettings.dinner_end || '21:00',
+          meal_skip_deadline: data.organization.meal_skip_deadline ?? 30,
         });
       }
     } catch (error) {
@@ -214,6 +217,7 @@ export default function SettingsPage() {
 
       const response = await api.put('/api/organization', {
         ...settings,
+        meal_skip_deadline: parseInt(settings.meal_skip_deadline) || 30,
         settings: mealTimings,
       });
 
@@ -249,6 +253,7 @@ export default function SettingsPage() {
           lunch_end: orgSettings.lunch_end || '14:00',
           dinner_start: orgSettings.dinner_start || '19:00',
           dinner_end: orgSettings.dinner_end || '21:00',
+          meal_skip_deadline: data.organization.meal_skip_deadline ?? 30,
         });
       }
 
@@ -751,7 +756,7 @@ export default function SettingsPage() {
               )}
 
               {/* Meal Timings Tab */}
-              {activeTab === 'meal_timings' && (
+              {activeTab === 'meal_timings' && (<>
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                     <div className="flex items-center gap-3">
@@ -874,7 +879,88 @@ export default function SettingsPage() {
                     </p>
                   </div>
                 </div>
-              )}
+
+                {/* Meal Skip Deadline */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-6">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Meal Skip Deadline</h3>
+                        <p className="text-sm text-gray-500">Set how early members must confirm or skip a meal</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="max-w-md">
+                      <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Minutes before meal starts
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <div className="flex">
+                          <input
+                            type="number"
+                            name="meal_skip_deadline"
+                            min="5"
+                            max="120"
+                            step="5"
+                            value={settings.meal_skip_deadline}
+                            onChange={handleChange}
+                            className="w-24 px-4 py-2.5 border border-gray-300 rounded-l-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          />
+                          <span className="inline-flex items-center px-4 text-sm font-medium text-gray-700 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg">
+                            min
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Example Preview */}
+                    <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-xs font-medium text-amber-800 mb-2 flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Example with current settings
+                      </p>
+                      <div className="space-y-1 text-xs text-amber-700">
+                        {[
+                          { name: 'Breakfast', start: settings.breakfast_start },
+                          { name: 'Lunch', start: settings.lunch_start },
+                          { name: 'Dinner', start: settings.dinner_start },
+                        ].map((meal) => {
+                          const [h, m] = meal.start.split(':').map(Number);
+                          const totalMin = h * 60 + m - (parseInt(settings.meal_skip_deadline) || 30);
+                          const deadlineH = Math.floor(((totalMin % 1440) + 1440) % 1440 / 60);
+                          const deadlineM = ((totalMin % 60) + 60) % 60;
+                          const hour12 = deadlineH === 0 ? 12 : deadlineH > 12 ? deadlineH - 12 : deadlineH;
+                          const period = deadlineH >= 12 ? 'PM' : 'AM';
+                          const deadlineLabel = `${hour12.toString().padStart(2, '0')}:${deadlineM.toString().padStart(2, '0')} ${period}`;
+                          return (
+                            <p key={meal.name}>
+                              <span className="font-medium">{meal.name}:</span> Skip allowed until {deadlineLabel}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-xs text-gray-500 flex items-start gap-1.5">
+                      <svg className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Members can confirm or skip their meal up to this many minutes before the meal starts. After the deadline, skipping is no longer allowed.
+                    </p>
+                  </div>
+                </div>
+              </>)}
             </div>
           </div>
         </div>

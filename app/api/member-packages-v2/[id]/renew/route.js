@@ -25,8 +25,22 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Package not found' }, { status: 404 });
     }
 
-    // Auto-expire if end_date has passed - create expired history record
+    // Block renewal for full_time/partial_full_time packages that are still active and not expired
     const today = new Date().toISOString().split('T')[0];
+    if (
+      ['full_time', 'partial_full_time'].includes(existingPackage.package_type) &&
+      existingPackage.is_active &&
+      existingPackage.status === 'active' &&
+      existingPackage.end_date &&
+      existingPackage.end_date >= today
+    ) {
+      return NextResponse.json(
+        { error: 'This member already has an active package that has not expired yet. Renewal is not allowed until the package expires.' },
+        { status: 400 }
+      );
+    }
+
+    // Auto-expire if end_date has passed - create expired history record
     const wasAutoExpired = ['full_time', 'partial_full_time'].includes(existingPackage.package_type)
       && existingPackage.end_date && existingPackage.end_date < today
       && existingPackage.status === 'active';

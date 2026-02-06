@@ -125,6 +125,7 @@ export async function PUT(request) {
     if ('support_phone' in body) updateData.support_phone = body.support_phone?.trim() || null;
     if ('support_whatsapp' in body) updateData.support_whatsapp = body.support_whatsapp?.trim() || null;
     if ('lost_card_fee' in body) updateData.lost_card_fee = parseFloat(body.lost_card_fee) || 500;
+    if ('meal_skip_deadline' in body) updateData.meal_skip_deadline = parseInt(body.meal_skip_deadline) || 30;
 
     // Merge settings with existing settings (don't replace entirely)
     if ('settings' in body) {

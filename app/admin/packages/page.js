@@ -364,6 +364,15 @@ export default function PackagesPage() {
   };
 
   const openRenewModal = (pkg) => {
+    // Block renewal for full_time/partial_full_time packages that are still active and not expired
+    if (
+      ['full_time', 'partial_full_time'].includes(pkg.package_type) &&
+      getRealTimeStatus(pkg) === 'active'
+    ) {
+      toast.error('This member\'s package is still active and has not expired yet. Renewal is not allowed until the package expires.');
+      return;
+    }
+
     const member = getMemberInfo(pkg.member_id, pkg.member_type);
     setSelectedMember(member);
 
@@ -509,6 +518,24 @@ export default function PackagesPage() {
     if (formData.package_type === 'daily_basis') {
       if (!formData.balance || parseFloat(formData.balance) <= 0) {
         toast.error('Please enter initial deposit amount');
+        return;
+      }
+    }
+
+    // For new packages: block if member already has an active non-expired full_time/partial_full_time package
+    if (!editingPackage && ['full_time', 'partial_full_time'].includes(formData.package_type)) {
+      const today = new Date().toISOString().split('T')[0];
+      const existingActive = packages.find(p =>
+        p.member_id === formData.member_id &&
+        p.member_type === formData.member_type &&
+        ['full_time', 'partial_full_time'].includes(p.package_type) &&
+        p.is_active &&
+        p.status === 'active' &&
+        p.end_date &&
+        p.end_date >= today
+      );
+      if (existingActive) {
+        toast.error('This member already has an active package that has not expired yet. A new package cannot be created until the current one expires.');
         return;
       }
     }

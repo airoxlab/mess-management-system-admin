@@ -205,6 +205,17 @@ export async function POST(request) {
       .maybeSingle();
 
     if (existingPackage) {
+      // Specific message for full_time/partial_full_time packages that haven't expired
+      if (
+        ['full_time', 'partial_full_time'].includes(existingPackage.package_type) &&
+        existingPackage.end_date &&
+        existingPackage.end_date >= today
+      ) {
+        return NextResponse.json(
+          { error: 'This member already has an active package that has not expired yet. A new package cannot be created until the current one expires.' },
+          { status: 400 }
+        );
+      }
       return NextResponse.json(
         { error: 'This member already has an active package. Please deactivate, renew, or edit the existing one.' },
         { status: 400 }
