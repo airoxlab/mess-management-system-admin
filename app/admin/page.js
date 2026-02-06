@@ -73,14 +73,19 @@ function getDateRange(preset, customStart, customEnd) {
       end = new Date(now);
       end.setHours(23, 59, 59, 999);
       break;
+    case 'all_time':
+      start = new Date(2020, 0, 1);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
     case 'custom':
       start = customStart ? new Date(customStart + 'T00:00:00') : today;
       end = customEnd ? new Date(customEnd + 'T23:59:59.999') : new Date(today.getTime());
       end.setHours(23, 59, 59, 999);
       break;
     default:
-      start = today;
-      end = new Date(today);
+      start = new Date(2020, 0, 1);
+      end = new Date(now);
       end.setHours(23, 59, 59, 999);
   }
   return { start, end };
@@ -96,24 +101,9 @@ function filterByDate(items, startDate, endDate) {
 export default function AdminDashboard() {
   const { user, organization } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('dashboard_date_filter') || 'today';
-    }
-    return 'today';
-  });
-  const [customStartDate, setCustomStartDate] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('dashboard_custom_start') || '';
-    }
-    return '';
-  });
-  const [customEndDate, setCustomEndDate] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('dashboard_custom_end') || '';
-    }
-    return '';
-  });
+  const [dateFilter, setDateFilter] = useState('all_time');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isLive, setIsLive] = useState(false);
   const refreshTimeoutRef = useRef(null);
@@ -366,13 +356,10 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <select
                 value={dateFilter}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDateFilter(val);
-                  localStorage.setItem('dashboard_date_filter', val);
-                }}
+                onChange={(e) => setDateFilter(e.target.value)}
                 className="px-3 py-2 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
               >
+                <option value="all_time">All Time</option>
                 <option value="today">Today</option>
                 <option value="yesterday">Yesterday</option>
                 <option value="this_week">This Week</option>
@@ -385,19 +372,13 @@ export default function AdminDashboard() {
                   <input
                     type="date"
                     value={customStartDate}
-                    onChange={(e) => {
-                      setCustomStartDate(e.target.value);
-                      localStorage.setItem('dashboard_custom_start', e.target.value);
-                    }}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
                     className="px-2 py-2 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
                   />
                   <input
                     type="date"
                     value={customEndDate}
-                    onChange={(e) => {
-                      setCustomEndDate(e.target.value);
-                      localStorage.setItem('dashboard_custom_end', e.target.value);
-                    }}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
                     className="px-2 py-2 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
                   />
                 </>
