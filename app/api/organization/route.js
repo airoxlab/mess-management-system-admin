@@ -91,25 +91,35 @@ export async function GET(request) {
 // PUT - Update organization settings
 export async function PUT(request) {
   try {
+    console.log('=== PUT /api/organization STARTED ===');
+
     const { orgId, error: orgError } = requireOrgId(request);
+    console.log('orgId from requireOrgId:', orgId);
+    console.log('orgError:', orgError);
     if (orgError) return orgError;
 
     let body;
     try {
       body = await request.json();
-    } catch {
+      console.log('Request body:', JSON.stringify(body, null, 2));
+    } catch (e) {
+      console.error('Failed to parse request body:', e);
       return NextResponse.json(
         { error: 'Invalid request body' },
         { status: 400 }
       );
     }
 
+    console.log('Fetching existing organization...');
     // First, get the existing organization (including settings for merging)
     const { data: existing, error: fetchError } = await supabase
       .from('organizations')
       .select('id, settings')
       .eq('id', orgId)
       .single();
+
+    console.log('Existing org data:', existing);
+    console.log('Fetch error:', fetchError);
 
     if (fetchError && fetchError.code !== 'PGRST116') {
       throw fetchError;
@@ -131,11 +141,15 @@ export async function PUT(request) {
     if ('settings' in body) {
       const existingSettings = existing?.settings || {};
       updateData.settings = { ...existingSettings, ...(body.settings || {}) };
+      console.log('Merged settings:', JSON.stringify(updateData.settings, null, 2));
     }
+
+    console.log('Final updateData:', JSON.stringify(updateData, null, 2));
 
     let organization;
 
     if (existing) {
+      console.log('Updating existing organization with ID:', orgId);
       // Update existing organization
       const { data, error } = await supabase
         .from('organizations')
@@ -143,6 +157,9 @@ export async function PUT(request) {
         .eq('id', orgId)
         .select()
         .single();
+
+      console.log('Update result - data:', data);
+      console.log('Update result - error:', error);
 
       if (error) throw error;
       organization = data;
@@ -163,6 +180,9 @@ export async function PUT(request) {
       organization = data;
     }
 
+    console.log('=== PUT /api/organization SUCCESS ===');
+    console.log('Returning organization:', organization);
+
     return NextResponse.json(
       { organization },
       {
@@ -174,7 +194,11 @@ export async function PUT(request) {
       }
     );
   } catch (error) {
-    console.error('Error updating organization:', error);
+    console.error('=== PUT /api/organization ERROR ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Full error object:', JSON.stringify(error, null, 2));
     return NextResponse.json(
       { error: error.message || 'Failed to update organization' },
       { status: 500 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import supabase from '@/lib/supabase';
 import { requireOrgId } from '@/lib/get-org-id';
 
-// GET all menu items (with optional category filter)
+// GET all menu items (with optional category and meal_type filters)
 export async function GET(request) {
   try {
     const { orgId, error: orgError } = requireOrgId(request);
@@ -10,6 +10,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const categoryId = searchParams.get('category_id');
+    const mealType = searchParams.get('meal_type');
 
     let query = supabase
       .from('menu_items')
@@ -19,6 +20,11 @@ export async function GET(request) {
 
     if (categoryId && categoryId !== 'all') {
       query = query.eq('category_id', categoryId);
+    }
+
+    if (mealType && mealType !== 'all') {
+      // Filter by specific meal_type or include items marked as 'all'
+      query = query.or(`meal_type.eq.${mealType},meal_type.eq.all`);
     }
 
     const { data: items, error } = await query;
@@ -42,7 +48,7 @@ export async function POST(request) {
     if (orgError) return orgError;
 
     const body = await request.json();
-    const { name, description, price, category_id, image_url, is_available, sort_order } = body;
+    const { name, description, price, category_id, image_url, is_available, sort_order, meal_type } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json(
@@ -76,6 +82,7 @@ export async function POST(request) {
         image_url: image_url || null,
         is_available: is_available !== false,
         sort_order: parseInt(sort_order) || 0,
+        meal_type: meal_type || 'all',
       }])
       .select('*, menu_categories(id, name)')
       .single();

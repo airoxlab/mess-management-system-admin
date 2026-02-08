@@ -84,6 +84,50 @@ export async function POST(request, { params }) {
     const carryOverLunch = carryOver ? remainingLunch : 0;
     const carryOverDinner = carryOver ? remainingDinner : 0;
 
+    // RULE: Date overlap prevention for renewed full_time/partial_full_time packages
+    const renewedPackageType = body.package_type || existingPackage.package_type;
+    if (['full_time', 'partial_full_time'].includes(renewedPackageType)) {
+      if (body.start_date && body.end_date) {
+        // Check for date overlap with OTHER existing packages (exclude the one being renewed)
+        const { data: otherPackages } = await supabase
+          .from('member_packages')
+          .select('id, package_type, status, start_date, end_date')
+          .eq('organization_id', orgId)
+          .eq('member_id', existingPackage.member_id)
+          .eq('member_type', existingPackage.member_type)
+          .in('package_type', ['full_time', 'partial_full_time'])
+          .neq('id', id) // Exclude the package being renewed
+          .not('start_date', 'is', null)
+          .not('end_date', 'is', null);
+
+        if (otherPackages && otherPackages.length > 0) {
+          for (const pkg of otherPackages) {
+            const newStart = body.start_date;
+            const newEnd = body.end_date;
+            const existingStart = pkg.start_date;
+            const existingEnd = pkg.end_date;
+
+            // Check overlap: new_start <= existing_end AND new_end >= existing_start
+            if (newStart <= existingEnd && newEnd >= existingStart) {
+              return NextResponse.json(
+                {
+                  error: `Renewal date range conflicts with existing ${pkg.package_type} package (${existingStart} to ${existingEnd}). Please choose non-overlapping dates.`,
+                  conflictingPackage: {
+                    id: pkg.id,
+                    type: pkg.package_type,
+                    start_date: existingStart,
+                    end_date: existingEnd,
+                    status: pkg.status
+                  }
+                },
+                { status: 400 }
+              );
+            }
+          }
+        }
+      }
+    }
+
     // Create snapshot for history before updating
     await supabase.from('package_history').insert([{
       member_id: existingPackage.member_id,

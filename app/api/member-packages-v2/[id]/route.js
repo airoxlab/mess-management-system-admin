@@ -94,6 +94,51 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: 'Package not found' }, { status: 404 });
     }
 
+    // RULE: Date overlap prevention when editing full_time/partial_full_time packages
+    const packageType = body.package_type || existingPackage.package_type;
+    if (['full_time', 'partial_full_time'].includes(packageType)) {
+      const startDate = body.start_date || existingPackage.start_date;
+      const endDate = body.end_date || existingPackage.end_date;
+
+      if (startDate && endDate) {
+        // Check for date overlap with OTHER packages (exclude current package being edited)
+        const { data: otherPackages } = await supabase
+          .from('member_packages')
+          .select('id, package_type, status, start_date, end_date')
+          .eq('organization_id', orgId)
+          .eq('member_id', existingPackage.member_id)
+          .eq('member_type', existingPackage.member_type)
+          .in('package_type', ['full_time', 'partial_full_time'])
+          .neq('id', id) // Exclude the package being edited
+          .not('start_date', 'is', null)
+          .not('end_date', 'is', null);
+
+        if (otherPackages && otherPackages.length > 0) {
+          for (const pkg of otherPackages) {
+            const existingStart = pkg.start_date;
+            const existingEnd = pkg.end_date;
+
+            // Check overlap: new_start <= existing_end AND new_end >= existing_start
+            if (startDate <= existingEnd && endDate >= existingStart) {
+              return NextResponse.json(
+                {
+                  error: `Date range conflicts with existing ${pkg.package_type} package (${existingStart} to ${existingEnd}). Please choose non-overlapping dates.`,
+                  conflictingPackage: {
+                    id: pkg.id,
+                    type: pkg.package_type,
+                    start_date: existingStart,
+                    end_date: existingEnd,
+                    status: pkg.status
+                  }
+                },
+                { status: 400 }
+              );
+            }
+          }
+        }
+      }
+    }
+
     // Extract disabled_days and disabled_meals from body
     const { disabled_days, disabled_meals, ...updateData } = body;
 

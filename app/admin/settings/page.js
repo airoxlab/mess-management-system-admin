@@ -31,6 +31,10 @@ export default function SettingsPage() {
     dinner_end: '21:00',
     // Meal Skip Deadline (minutes before meal start)
     meal_skip_deadline: 30,
+    // Daily Basis Pricing
+    breakfast_price: 50,
+    lunch_price: 80,
+    dinner_price: 70,
   });
 
   useEffect(() => {
@@ -40,32 +44,40 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      // Add timestamp to bust cache and use proper headers
-      const response = await api.get(`/api/organization?t=${Date.now()}`, {
+
+      // Fetch organization settings
+      const orgResponse = await api.get(`/api/organization?t=${Date.now()}`, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch settings');
+      if (!orgResponse.ok) {
+        throw new Error('Failed to fetch organization settings');
       }
 
-      const text = await response.text();
-      const data = text ? JSON.parse(text) : {};
+      const orgText = await orgResponse.text();
+      const orgData = orgText ? JSON.parse(orgText) : {};
 
-      if (data.organization) {
-        const orgSettings = data.organization.settings || {};
+      // Daily basis pricing is stored in organizations.settings.daily_basis_pricing
+      const dailyBasisPricing = orgData.organization?.settings?.daily_basis_pricing || {
+        breakfast: 50,
+        lunch: 80,
+        dinner: 70
+      };
+
+      if (orgData.organization) {
+        const orgSettings = orgData.organization.settings || {};
         setSettings({
-          name: data.organization.name || 'LIMHS CAFETERIA',
-          logo_url: data.organization.logo_url || null,
-          address: data.organization.address || '',
-          contact_phone: data.organization.contact_phone || '',
-          contact_email: data.organization.contact_email || '',
-          support_phone: data.organization.support_phone || '',
-          support_whatsapp: data.organization.support_whatsapp || '',
-          lost_card_fee: data.organization.lost_card_fee ?? 500,
+          name: orgData.organization.name || 'LIMHS CAFETERIA',
+          logo_url: orgData.organization.logo_url || null,
+          address: orgData.organization.address || '',
+          contact_phone: orgData.organization.contact_phone || '',
+          contact_email: orgData.organization.contact_email || '',
+          support_phone: orgData.organization.support_phone || '',
+          support_whatsapp: orgData.organization.support_whatsapp || '',
+          lost_card_fee: orgData.organization.lost_card_fee ?? 500,
           // Meal Timings from settings jsonb
           breakfast_start: orgSettings.breakfast_start || '07:00',
           breakfast_end: orgSettings.breakfast_end || '09:00',
@@ -73,7 +85,11 @@ export default function SettingsPage() {
           lunch_end: orgSettings.lunch_end || '14:00',
           dinner_start: orgSettings.dinner_start || '19:00',
           dinner_end: orgSettings.dinner_end || '21:00',
-          meal_skip_deadline: data.organization.meal_skip_deadline ?? 30,
+          meal_skip_deadline: orgData.organization.meal_skip_deadline ?? 30,
+          // Daily Basis Pricing
+          breakfast_price: dailyBasisPricing.breakfast ?? 50,
+          lunch_price: dailyBasisPricing.lunch ?? 80,
+          dinner_price: dailyBasisPricing.dinner ?? 70,
         });
       }
     } catch (error) {
@@ -205,23 +221,36 @@ export default function SettingsPage() {
     try {
       setSaving(true);
 
-      // Separate meal timings into the settings jsonb field
-      const mealTimings = {
+      // Combine meal timings and daily basis pricing into the settings jsonb field
+      const combinedSettings = {
         breakfast_start: settings.breakfast_start,
         breakfast_end: settings.breakfast_end,
         lunch_start: settings.lunch_start,
         lunch_end: settings.lunch_end,
         dinner_start: settings.dinner_start,
         dinner_end: settings.dinner_end,
+        daily_basis_pricing: {
+          breakfast: parseFloat(settings.breakfast_price) || 50,
+          lunch: parseFloat(settings.lunch_price) || 80,
+          dinner: parseFloat(settings.dinner_price) || 70,
+        }
       };
 
+      // DEBUG: Log what we're about to save
+      console.log('=== SAVING SETTINGS TO DATABASE ===');
+      console.log('Current settings state:', settings);
+      console.log('Combined settings:', combinedSettings);
+
+      console.log('Making PUT request to /api/organization...');
       const response = await api.put('/api/organization', {
         ...settings,
         meal_skip_deadline: parseInt(settings.meal_skip_deadline) || 30,
-        settings: mealTimings,
+        settings: combinedSettings,
       });
 
-      // Handle empty or invalid JSON responses
+      console.log('Response received:', response.status, response.statusText);
+
+      // Handle organization response
       const text = await response.text();
       let data;
       try {
@@ -237,6 +266,8 @@ export default function SettingsPage() {
       // Update local state with saved data to ensure sync
       if (data.organization) {
         const orgSettings = data.organization.settings || {};
+        const savedPricing = orgSettings.daily_basis_pricing || { breakfast: 50, lunch: 80, dinner: 70 };
+
         setSettings({
           name: data.organization.name || 'LIMHS CAFETERIA',
           logo_url: data.organization.logo_url || null,
@@ -254,13 +285,31 @@ export default function SettingsPage() {
           dinner_start: orgSettings.dinner_start || '19:00',
           dinner_end: orgSettings.dinner_end || '21:00',
           meal_skip_deadline: data.organization.meal_skip_deadline ?? 30,
+          // Daily Basis Pricing
+          breakfast_price: savedPricing.breakfast ?? 50,
+          lunch_price: savedPricing.lunch ?? 80,
+          dinner_price: savedPricing.dinner ?? 70,
         });
       }
 
       toast.success('Settings saved successfully');
     } catch (error) {
-      console.error('Save error:', error);
-      toast.error(error.message || 'Failed to save settings');
+      console.error('=== SAVE ERROR ===');
+      console.error('Error type:', error.constructor.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      console.error('Full error:', error);
+
+      // Check if it's a network error
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        console.error('FETCH FAILED - Possible causes:');
+        console.error('1. Admin server not running');
+        console.error('2. Wrong port or URL');
+        console.error('3. Server crashed during request');
+        toast.error('Cannot connect to server. Is the admin app running?');
+      } else {
+        toast.error(error.message || 'Failed to save settings');
+      }
     } finally {
       setSaving(false);
     }
@@ -285,6 +334,11 @@ export default function SettingsPage() {
     { id: 'fees', label: 'Fees', icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    )},
+    { id: 'pricing', label: 'Meal Pricing', icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
       </svg>
     )},
     { id: 'meal_timings', label: 'Meal Timings', icon: (
@@ -750,6 +804,119 @@ export default function SettingsPage() {
                           Fee charged for replacing a lost member card
                         </p>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pricing Tab */}
+              {activeTab === 'pricing' && (
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-100 rounded-lg">
+                        <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Daily Basis Meal Pricing</h3>
+                        <p className="text-sm text-gray-500">Set prices for daily basis package meals</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="space-y-4">
+                      {/* Breakfast Price */}
+                      <div className="flex items-center gap-4 p-3 bg-orange-50 rounded-lg">
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="p-1.5 bg-orange-100 rounded">
+                            <svg className="w-4 h-4 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                          </div>
+                          <span className="font-medium text-gray-900">Breakfast</span>
+                        </div>
+                        <div className="flex-1 flex items-center gap-2">
+                          <span className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-l-lg">
+                            Rs.
+                          </span>
+                          <input
+                            type="number"
+                            name="breakfast_price"
+                            min="0"
+                            step="1"
+                            value={settings.breakfast_price}
+                            onChange={handleChange}
+                            className="flex-1 px-3 py-2 border border-l-0 border-gray-300 rounded-r-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Lunch Price */}
+                      <div className="flex items-center gap-4 p-3 bg-yellow-50 rounded-lg">
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="p-1.5 bg-yellow-100 rounded">
+                            <svg className="w-4 h-4 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                          </div>
+                          <span className="font-medium text-gray-900">Lunch</span>
+                        </div>
+                        <div className="flex-1 flex items-center gap-2">
+                          <span className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-l-lg">
+                            Rs.
+                          </span>
+                          <input
+                            type="number"
+                            name="lunch_price"
+                            min="0"
+                            step="1"
+                            value={settings.lunch_price}
+                            onChange={handleChange}
+                            className="flex-1 px-3 py-2 border border-l-0 border-gray-300 rounded-r-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Dinner Price */}
+                      <div className="flex items-center gap-4 p-3 bg-indigo-50 rounded-lg">
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="p-1.5 bg-indigo-100 rounded">
+                            <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                            </svg>
+                          </div>
+                          <span className="font-medium text-gray-900">Dinner</span>
+                        </div>
+                        <div className="flex-1 flex items-center gap-2">
+                          <span className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-l-lg">
+                            Rs.
+                          </span>
+                          <input
+                            type="number"
+                            name="dinner_price"
+                            min="0"
+                            step="1"
+                            value={settings.dinner_price}
+                            onChange={handleChange}
+                            className="flex-1 px-3 py-2 border border-l-0 border-gray-300 rounded-r-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Info */}
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-xs font-medium text-blue-800 mb-1.5 flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        About Daily Basis Pricing
+                      </p>
+                      <p className="text-xs text-blue-700">
+                        These prices apply to members with <strong>Daily Basis</strong> packages. When they scan their card during meal hours, the corresponding amount will be deducted from their package balance.
+                      </p>
                     </div>
                   </div>
                 </div>

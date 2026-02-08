@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { formatDate, formatTime } from '@/lib/utils';
 import api from '@/lib/api-client';
@@ -117,6 +117,8 @@ export default function MealStatusPage() {
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterMeal, setFilterMeal] = useState('any');
+  const [filterGender, setFilterGender] = useState('all');
+  const [filterMenuOption, setFilterMenuOption] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [datePreset, setDatePreset] = useState('today');
   const [customDate, setCustomDate] = useState(getToday());
@@ -124,6 +126,10 @@ export default function MealStatusPage() {
   const [mealTimings, setMealTimings] = useState(null);
   const [activeMeal, setActiveMeal] = useState(null);
   const mealTimingsRef = useRef(null);
+  const [manualConfirmModal, setManualConfirmModal] = useState(null);
+  const [menuOptions, setMenuOptions] = useState([]);
+  const [selectedMenuOption, setSelectedMenuOption] = useState('');
+  const [confirming, setConfirming] = useState(false);
 
   const isSingleDay = dates.length <= 1;
 
@@ -162,13 +168,18 @@ export default function MealStatusPage() {
         setActiveMeal(getActiveMeal(mealTimingsRef.current));
       }
     }, 60000);
+
     return () => clearInterval(interval);
   }, []);
 
   const fetchMealStatus = useCallback(async (startDate, endDate) => {
     setLoading(true);
     try {
-      const res = await api.get(`/api/meal-status?startDate=${startDate}&endDate=${endDate}`);
+      // Add timestamp to prevent caching + force no-store
+      const res = await api.get(
+        `/api/meal-status?startDate=${startDate}&endDate=${endDate}&t=${Date.now()}`,
+        { cache: 'no-store' }
+      );
       const data = await res.json();
       if (res.ok) {
         setMembers(data.members || []);
@@ -184,6 +195,66 @@ export default function MealStatusPage() {
     }
   }, []);
 
+  const handleOpenManualConfirm = async (member, date, mealType) => {
+    // Fetch available menu options for this date and meal type
+    try {
+      const res = await api.get(`/api/menu-options?date=${date}&meal_type=${mealType}`);
+      const data = await res.json();
+      if (res.ok) {
+        setMenuOptions(data.options || []);
+      } else {
+        setMenuOptions([]);
+      }
+    } catch (err) {
+      setMenuOptions([]);
+    }
+
+    setManualConfirmModal({
+      member,
+      date,
+      mealType,
+    });
+    setSelectedMenuOption('');
+  };
+
+  const handleConfirmMeal = async () => {
+    if (!manualConfirmModal) return;
+
+    const { member, date, mealType } = manualConfirmModal;
+
+    setConfirming(true);
+    try {
+      const res = await api.post('/api/meal-status/manual-confirm', {
+        member_id: member.id,
+        member_type: member.member_type,
+        date,
+        meal_type: mealType,
+        menu_option_id: selectedMenuOption || null,
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Meal confirmed for ${member.name}`);
+        setManualConfirmModal(null);
+        setSelectedMenuOption('');
+
+        // Refresh meal status
+        if (datePreset === 'custom') {
+          fetchMealStatus(customDate, customDate);
+        } else {
+          const { startDate, endDate } = getDateRange(datePreset);
+          fetchMealStatus(startDate, endDate);
+        }
+      } else {
+        toast.error(data.error || 'Failed to confirm meal');
+      }
+    } catch (err) {
+      toast.error('Failed to confirm meal');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
   useEffect(() => {
     if (datePreset === 'custom') {
       fetchMealStatus(customDate, customDate);
@@ -191,6 +262,20 @@ export default function MealStatusPage() {
       const { startDate, endDate } = getDateRange(datePreset);
       fetchMealStatus(startDate, endDate);
     }
+  }, [datePreset, customDate, fetchMealStatus]);
+
+  // Auto-refresh meal status every 30 seconds
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      if (datePreset === 'custom') {
+        fetchMealStatus(customDate, customDate);
+      } else {
+        const { startDate, endDate } = getDateRange(datePreset);
+        fetchMealStatus(startDate, endDate);
+      }
+    }, 30000);
+
+    return () => clearInterval(refreshInterval);
   }, [datePreset, customDate, fetchMealStatus]);
 
   // Auto-expand logic: expand all for short ranges, collapse for long ranges
@@ -216,10 +301,24 @@ export default function MealStatusPage() {
   const expandAll = () => setExpandedMembers(new Set(filteredMembers.map((m) => m.id)));
   const collapseAll = () => setExpandedMembers(new Set());
 
+  // Get unique menu options from all members
+  const uniqueMenuOptions = React.useMemo(() => {
+    const options = new Set();
+    members.forEach((m) => {
+      m.days.forEach((day) => {
+        if (day.breakfast?.menuOption) options.add(day.breakfast.menuOption);
+        if (day.lunch?.menuOption) options.add(day.lunch.menuOption);
+        if (day.dinner?.menuOption) options.add(day.dinner.menuOption);
+      });
+    });
+    return Array.from(options).sort();
+  }, [members]);
+
   // Filter and sort
   const filteredMembers = members
     .filter((m) => {
       if (filterType !== 'all' && m.member_type !== filterType) return false;
+      if (filterGender !== 'all' && m.gender !== filterGender) return false;
 
       if (m.days.length > 0 && filterStatus !== 'all') {
         const latest = m.days[0];
@@ -236,6 +335,14 @@ export default function MealStatusPage() {
           if (filterMeal === 'dinner' && hasMeal(latest.dinner)) return false;
           if (filterMeal === 'any' && (hasMeal(latest.breakfast) || hasMeal(latest.lunch) || hasMeal(latest.dinner))) return false;
         }
+      }
+
+      // Filter by menu option
+      if (filterMenuOption !== 'all' && m.days.length > 0) {
+        const latest = m.days[0];
+        const hasMenuOption = (meal) => meal.menuOption === filterMenuOption;
+        const meals = filterMeal === 'any' ? ['breakfast', 'lunch', 'dinner'] : [filterMeal];
+        if (!meals.some(mealType => hasMenuOption(latest[mealType]))) return false;
       }
 
       if (searchQuery) {
@@ -273,12 +380,28 @@ export default function MealStatusPage() {
             <h1 className="text-2xl font-bold text-gray-900">Meal Status</h1>
             <p className="text-gray-500 mt-0.5 text-sm">Track daily meal attendance for all members</p>
           </div>
-          {datePreset === 'today' && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              Live - Today
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {datePreset === 'today' && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                Live - Auto-refresh: 30s
+              </span>
+            )}
+            <button
+              onClick={() => {
+                const { startDate, endDate } = getDateRange(datePreset);
+                fetchMealStatus(startDate, endDate);
+                toast.success('Refreshed');
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+              title="Refresh meal status data"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -332,6 +455,30 @@ export default function MealStatusPage() {
             <option value="breakfast">Breakfast</option>
             <option value="lunch">Lunch</option>
             <option value="dinner">Dinner</option>
+          </select>
+
+          {/* Gender Filter */}
+          <select
+            value={filterGender}
+            onChange={(e) => setFilterGender(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none bg-white whitespace-nowrap"
+          >
+            <option value="all">All Genders</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
+
+          {/* Menu Option Filter */}
+          <select
+            value={filterMenuOption}
+            onChange={(e) => setFilterMenuOption(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none bg-white whitespace-nowrap"
+          >
+            <option value="all">All Dishes</option>
+            {uniqueMenuOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
           </select>
 
           {/* Date Preset */}
@@ -467,21 +614,100 @@ export default function MealStatusPage() {
           <p className="text-gray-400 text-sm mt-1">Try adjusting your filters</p>
         </div>
       ) : isSingleDay ? (
-        <SingleDayView members={filteredMembers} activeMeal={activeMeal} />
+        <SingleDayView
+          members={filteredMembers}
+          activeMeal={activeMeal}
+          dates={dates}
+          onManualConfirm={handleOpenManualConfirm}
+        />
       ) : (
         <RangeView
           members={filteredMembers}
           expandedMembers={expandedMembers}
           toggleMember={toggleMember}
           activeMeal={activeMeal}
+          dates={dates}
+          onManualConfirm={handleOpenManualConfirm}
         />
+      )}
+
+      {/* Manual Confirmation Modal */}
+      {manualConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setManualConfirmModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Manually Confirm Meal
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Member:</span> {manualConfirmModal.member.name}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Date:</span> {formatDate(manualConfirmModal.date, 'MMM dd, yyyy')}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Meal:</span> {manualConfirmModal.mealType.charAt(0).toUpperCase() + manualConfirmModal.mealType.slice(1)}
+                </p>
+              </div>
+
+              {menuOptions.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Menu Option (Optional)
+                  </label>
+                  <select
+                    value={selectedMenuOption}
+                    onChange={(e) => setSelectedMenuOption(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    <option value="">None</option>
+                    {menuOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.option_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end pt-4 border-t">
+                <button
+                  onClick={() => setManualConfirmModal(null)}
+                  disabled={confirming}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmMeal}
+                  disabled={confirming}
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {confirming ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Confirming...
+                    </>
+                  ) : (
+                    'Confirm Meal'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
 /* ====================== Single Day Table View ====================== */
-function SingleDayView({ members, activeMeal }) {
+function SingleDayView({ members, activeMeal, dates, onManualConfirm }) {
   const mealHeaderClass = (meal) =>
     `text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider ${
       activeMeal === meal
@@ -528,13 +754,31 @@ function SingleDayView({ members, activeMeal }) {
                     <p className="text-sm text-gray-600 max-w-[200px] truncate">{member.department}</p>
                   </td>
                   <td className={mealCellClass('breakfast')}>
-                    <StatusBadge meal={day.breakfast} />
+                    <StatusBadge
+                      meal={day.breakfast}
+                      member={member}
+                      date={day.date}
+                      mealType="breakfast"
+                      onManualConfirm={onManualConfirm}
+                    />
                   </td>
                   <td className={mealCellClass('lunch')}>
-                    <StatusBadge meal={day.lunch} />
+                    <StatusBadge
+                      meal={day.lunch}
+                      member={member}
+                      date={day.date}
+                      mealType="lunch"
+                      onManualConfirm={onManualConfirm}
+                    />
                   </td>
                   <td className={mealCellClass('dinner')}>
-                    <StatusBadge meal={day.dinner} />
+                    <StatusBadge
+                      meal={day.dinner}
+                      member={member}
+                      date={day.date}
+                      mealType="dinner"
+                      onManualConfirm={onManualConfirm}
+                    />
                   </td>
                 </tr>
               );
@@ -547,7 +791,7 @@ function SingleDayView({ members, activeMeal }) {
 }
 
 /* ====================== Range (Multi-Day) Card View ====================== */
-function RangeView({ members, expandedMembers, toggleMember, activeMeal }) {
+function RangeView({ members, expandedMembers, toggleMember, activeMeal, dates, onManualConfirm }) {
   return (
     <div className="space-y-3">
       {members.map((member) => {
@@ -635,13 +879,34 @@ function RangeView({ members, expandedMembers, toggleMember, activeMeal }) {
                       <p className="text-xs text-gray-400">{formatDate(day.date, 'EEEE')}</p>
                     </div>
                     <div className={`text-center ${activeMeal === 'breakfast' ? 'bg-green-100 rounded' : ''}`}>
-                      <StatusBadge meal={day.breakfast} compact />
+                      <StatusBadge
+                        meal={day.breakfast}
+                        compact
+                        member={member}
+                        date={day.date}
+                        mealType="breakfast"
+                        onManualConfirm={onManualConfirm}
+                      />
                     </div>
                     <div className={`text-center ${activeMeal === 'lunch' ? 'bg-green-100 rounded' : ''}`}>
-                      <StatusBadge meal={day.lunch} compact />
+                      <StatusBadge
+                        meal={day.lunch}
+                        compact
+                        member={member}
+                        date={day.date}
+                        mealType="lunch"
+                        onManualConfirm={onManualConfirm}
+                      />
                     </div>
                     <div className={`text-center ${activeMeal === 'dinner' ? 'bg-green-100 rounded' : ''}`}>
-                      <StatusBadge meal={day.dinner} compact />
+                      <StatusBadge
+                        meal={day.dinner}
+                        compact
+                        member={member}
+                        date={day.date}
+                        mealType="dinner"
+                        onManualConfirm={onManualConfirm}
+                      />
                     </div>
                   </div>
                 ))}
@@ -655,78 +920,152 @@ function RangeView({ members, expandedMembers, toggleMember, activeMeal }) {
 }
 
 /* ====================== Status Badge Component ====================== */
-function StatusBadge({ meal, compact = false }) {
+function StatusBadge({ meal, compact = false, member, date, mealType, onManualConfirm }) {
   if (!meal) return null;
 
-  switch (meal.status) {
-    case 'collected':
-      return (
-        <span className="inline-flex items-center gap-1.5 text-green-700">
-          <span className={`flex items-center justify-center rounded-full bg-green-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
-            <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-          </span>
-          <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>
-            {meal.time ? formatTime(meal.time, 'h:mm a') : 'Collected'}
-          </span>
-        </span>
-      );
+  const renderBadgeContent = () => {
+    switch (meal.status) {
+      case 'collected':
+        return (
+          <>
+            <span className={`flex items-center justify-center rounded-full bg-green-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+              <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+            <div className="flex flex-col">
+              <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>
+                {meal.time ? formatTime(meal.time, 'h:mm a') : 'Collected'}
+              </span>
+              {meal.menuOption && (
+                <span className={`text-gray-600 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+                  {meal.menuOption}
+                </span>
+              )}
+            </div>
+          </>
+        );
 
-    case 'skipped':
-      return (
-        <span className="inline-flex items-center gap-1.5 text-red-600">
-          <span className={`flex items-center justify-center rounded-full bg-red-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
-            <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-            </svg>
-          </span>
-          <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Skipped</span>
-        </span>
-      );
+      case 'skipped':
+        return (
+          <>
+            <span className={`flex items-center justify-center rounded-full bg-red-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+              <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+            </span>
+            <div className="flex flex-col">
+              <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Skipped</span>
+              {meal.menuOption && (
+                <span className={`text-gray-500 line-through ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+                  {meal.menuOption}
+                </span>
+              )}
+            </div>
+          </>
+        );
 
-    case 'pending':
-      return (
-        <span className="inline-flex items-center gap-1.5 text-green-700">
-          <span className={`flex items-center justify-center rounded-full bg-green-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
-            <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-          </span>
-          <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Confirmed</span>
-        </span>
-      );
+      case 'pending':
+        return (
+          <>
+            <span className={`flex items-center justify-center rounded-full bg-green-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+              <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+            <div className="flex flex-col">
+              <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Confirmed</span>
+              {meal.menuOption && (
+                <span className={`text-gray-600 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+                  {meal.menuOption}
+                </span>
+              )}
+            </div>
+          </>
+        );
 
-    case 'missed':
-      return (
-        <span className="inline-flex items-center gap-1.5 text-red-600">
-          <span className={`flex items-center justify-center rounded-full bg-red-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
-            <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </span>
-          <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Missed</span>
-        </span>
-      );
+      case 'missed':
+        return (
+          <>
+            <span className={`flex items-center justify-center rounded-full bg-red-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+              <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </span>
+            <div className="flex flex-col">
+              <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Missed</span>
+              {meal.menuOption && (
+                <span className={`text-gray-500 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+                  {meal.menuOption}
+                </span>
+              )}
+            </div>
+          </>
+        );
 
-    case 'cancelled':
-      return (
-        <span className="inline-flex items-center gap-1.5 text-gray-400">
-          <span className={`flex items-center justify-center rounded-full bg-gray-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
-            <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </span>
-          <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Cancelled</span>
-        </span>
-      );
+      case 'not_selected':
+        return (
+          <>
+            <span className={`flex items-center justify-center rounded-full bg-gray-200 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+              <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </span>
+            <div className="flex flex-col gap-1">
+              <span className={`font-medium text-gray-500 ${compact ? 'text-[11px]' : 'text-xs'}`}>Not Selected</span>
+              {onManualConfirm && member && date && mealType && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManualConfirm(member, date, mealType);
+                  }}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                >
+                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add
+                </button>
+              )}
+            </div>
+          </>
+        );
 
-    case 'not_in_package':
-      return (
-        <span className={compact ? 'text-base' : 'text-lg'}>&#10060;</span>
-      );
+      case 'cancelled':
+        return (
+          <>
+            <span className={`flex items-center justify-center rounded-full bg-gray-100 ${compact ? 'w-6 h-6' : 'w-7 h-7'}`}>
+              <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </span>
+            <div className="flex flex-col">
+              <span className={`font-medium ${compact ? 'text-[11px]' : 'text-xs'}`}>Cancelled</span>
+              {meal.menuOption && (
+                <span className={`text-gray-500 line-through ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+                  {meal.menuOption}
+                </span>
+              )}
+            </div>
+          </>
+        );
 
-    default:
-      return <span className="text-xs text-gray-400">-</span>;
-  }
+      case 'not_in_package':
+        return <span className={compact ? 'text-base' : 'text-lg'}>&#10060;</span>;
+
+      default:
+        return <span className="text-xs text-gray-400">-</span>;
+    }
+  };
+
+  const statusColor =
+    meal.status === 'collected' || meal.status === 'pending' ? 'text-green-700' :
+    meal.status === 'skipped' || meal.status === 'missed' ? 'text-red-600' :
+    meal.status === 'cancelled' || meal.status === 'not_selected' ? 'text-gray-400' : '';
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${statusColor}`}>
+      {renderBadgeContent()}
+    </span>
+  );
 }

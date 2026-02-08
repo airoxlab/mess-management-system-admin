@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { requireOrgId } from '@/lib/get-org-id';
 
+// Disable ALL caching for this route
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export async function GET(request) {
   const { orgId, error } = requireOrgId(request);
@@ -15,10 +18,10 @@ export async function GET(request) {
     const endDate = searchParams.get('endDate') || today;
 
     // Fetch all data in parallel
-    const [studentsRes, facultyRes, staffRes, selectionsRes, tokensRes, packagesRes] = await Promise.all([
+    const [studentsRes, facultyRes, staffRes, selectionsRes, tokensRes, packagesRes, menuSelectionsRes, menuOptionsRes] = await Promise.all([
       supabase
         .from('student_members')
-        .select('id, full_name, roll_number, department_program, email_address, contact_number')
+        .select('id, full_name, roll_number, department_program, email_address, contact_number, gender')
         .eq('organization_id', orgId)
         .eq('status', 'approved'),
       supabase
@@ -33,10 +36,11 @@ export async function GET(request) {
         .eq('status', 'approved'),
       supabase
         .from('meal_selections')
-        .select('member_id, date, breakfast_needed, lunch_needed, dinner_needed')
+        .select('member_id, member_type, date, breakfast_needed, lunch_needed, dinner_needed')
         .eq('organization_id', orgId)
         .gte('date', startDate)
-        .lte('date', endDate),
+        .lte('date', endDate)
+        .order('created_at', { ascending: false }),
       supabase
         .from('meal_tokens')
         .select('member_id, meal_type, token_date, token_time, status, collected_at')
@@ -49,6 +53,19 @@ export async function GET(request) {
         .eq('organization_id', orgId)
         .eq('is_active', true)
         .eq('status', 'active'),
+      supabase
+        .from('member_menu_selections')
+        .select('member_id, member_type, date, meal_type, menu_option_id')
+        .eq('organization_id', orgId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('menu_options')
+        .select('id, date, meal_type, option_name')
+        .eq('organization_id', orgId)
+        .gte('date', startDate)
+        .lte('date', endDate),
     ]);
 
     if (studentsRes.error) throw studentsRes.error;
@@ -68,11 +85,15 @@ export async function GET(request) {
     }
 
     // Selections lookup: { member_id: { date_str: selection } }
+    // With descending order, first record is newest, so keep it and skip duplicates
     const selectionsMap = {};
     if (!selectionsRes.error && selectionsRes.data) {
       selectionsRes.data.forEach((sel) => {
         if (!selectionsMap[sel.member_id]) selectionsMap[sel.member_id] = {};
-        selectionsMap[sel.member_id][sel.date] = sel;
+        // Only assign if not already set (keeps the newest record from descending order)
+        if (!selectionsMap[sel.member_id][sel.date]) {
+          selectionsMap[sel.member_id][sel.date] = sel;
+        }
       });
     }
 
@@ -86,6 +107,29 @@ export async function GET(request) {
         // Keep the most relevant token (prefer COLLECTED, then PENDING)
         if (!existing || tok.status === 'COLLECTED' || (existing.status !== 'COLLECTED' && tok.status === 'PENDING')) {
           tokensMap[tok.member_id][tok.token_date][tok.meal_type] = tok;
+        }
+      });
+    }
+
+    // Menu options lookup: { option_id: option_name }
+    const menuOptionsMap = {};
+    if (!menuOptionsRes.error && menuOptionsRes.data) {
+      menuOptionsRes.data.forEach((opt) => {
+        menuOptionsMap[opt.id] = opt.option_name;
+      });
+    }
+
+    // Menu selections lookup: { member_id: { date_str: { meal_type: option_name } } }
+    // With descending order, first record is newest, so keep it and skip duplicates
+    const menuSelectionsMap = {};
+    if (!menuSelectionsRes.error && menuSelectionsRes.data) {
+      menuSelectionsRes.data.forEach((sel) => {
+        if (!menuSelectionsMap[sel.member_id]) menuSelectionsMap[sel.member_id] = {};
+        if (!menuSelectionsMap[sel.member_id][sel.date]) menuSelectionsMap[sel.member_id][sel.date] = {};
+        // Only assign if not already set (keeps the newest record from descending order)
+        if (!menuSelectionsMap[sel.member_id][sel.date][sel.meal_type]) {
+          const optionName = menuOptionsMap[sel.menu_option_id];
+          menuSelectionsMap[sel.member_id][sel.date][sel.meal_type] = optionName;
         }
       });
     }
@@ -116,10 +160,37 @@ export async function GET(request) {
       // Check user opt-out (skipped from their app)
       const sel = selectionsMap[memberId]?.[date];
       const neededKey = `${mealType}_needed`;
-      const needed = sel ? sel[neededKey] : true;
+
+      // Get menu option if selected
+      const menuOption = menuSelectionsMap[memberId]?.[date]?.[mealType];
+
+      // If no selection record exists, check if they've at least selected a menu option
+      if (!sel) {
+        // If they haven't made any selection or menu choice, return not_selected
+        if (!menuOption) {
+          return { status: 'not_selected' };
+        }
+        // If they selected a menu option but no toggle record, treat as opted in
+        const token = tokensMap[memberId]?.[date]?.[mealUpper];
+        if (token) {
+          switch (token.status) {
+            case 'COLLECTED':
+              return { status: 'collected', time: token.token_time, collected_at: token.collected_at, menuOption };
+            case 'PENDING':
+              return { status: 'pending', time: token.token_time, menuOption };
+            case 'EXPIRED':
+              return { status: 'missed', menuOption };
+            case 'CANCELLED':
+              return { status: 'cancelled', menuOption };
+          }
+        }
+        return date < today ? { status: 'missed', menuOption } : { status: 'pending', menuOption };
+      }
+
+      const needed = sel[neededKey];
 
       if (needed === false) {
-        return { status: 'skipped' };
+        return { status: 'skipped', menuOption };
       }
 
       // Check token for actual collection
@@ -127,18 +198,18 @@ export async function GET(request) {
       if (token) {
         switch (token.status) {
           case 'COLLECTED':
-            return { status: 'collected', time: token.token_time, collected_at: token.collected_at };
+            return { status: 'collected', time: token.token_time, collected_at: token.collected_at, menuOption };
           case 'PENDING':
-            return { status: 'pending', time: token.token_time };
+            return { status: 'pending', time: token.token_time, menuOption };
           case 'EXPIRED':
-            return { status: 'missed' };
+            return { status: 'missed', menuOption };
           case 'CANCELLED':
-            return { status: 'cancelled' };
+            return { status: 'cancelled', menuOption };
         }
       }
 
       // No token: past date = missed, today/future = pending
-      return date < today ? { status: 'missed' } : { status: 'pending' };
+      return date < today ? { status: 'missed', menuOption } : { status: 'pending', menuOption };
     }
 
     const allMembers = [];
@@ -160,6 +231,7 @@ export async function GET(request) {
         department,
         email: m.email_address,
         contact: m.contact_number,
+        gender: m.gender || 'not_specified',
         member_type: memberType,
         days,
       });
@@ -194,13 +266,20 @@ export async function GET(request) {
       if (d) stats.dinner_taking++;
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       members: allMembers,
       stats,
       startDate,
       endDate,
       dates,
     });
+
+    // Prevent ALL caching
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   } catch (err) {
     console.error('Meal status error:', err);
     return NextResponse.json(

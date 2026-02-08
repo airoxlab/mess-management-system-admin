@@ -193,33 +193,70 @@ export async function POST(request) {
       await supabase.from('package_history').insert(historyRecords);
     }
 
-    // Check if member already has an active package
+    // RULE 1: Check if member already has ANY active or deactivated package (strict one-package-per-member)
     const { data: existingPackage } = await supabase
       .from('member_packages')
-      .select('id, package_type, status')
+      .select('id, package_type, status, start_date, end_date')
       .eq('organization_id', orgId)
       .eq('member_id', body.member_id)
       .eq('member_type', body.member_type)
-      .eq('is_active', true)
-      .eq('status', 'active')
+      .in('status', ['active', 'deactivated'])
       .maybeSingle();
 
     if (existingPackage) {
-      // Specific message for full_time/partial_full_time packages that haven't expired
-      if (
-        ['full_time', 'partial_full_time'].includes(existingPackage.package_type) &&
-        existingPackage.end_date &&
-        existingPackage.end_date >= today
-      ) {
+      const statusText = existingPackage.status === 'deactivated' ? 'deactivated' : 'active';
+      return NextResponse.json(
+        { error: `This member already has a ${statusText} ${existingPackage.package_type} package. Please ${existingPackage.status === 'deactivated' ? 'delete it or reactivate it' : 'wait for it to expire or deactivate it'} before creating a new package.` },
+        { status: 400 }
+      );
+    }
+
+    // RULE 2: Date overlap prevention - for full_time and partial_full_time packages only
+    if (['full_time', 'partial_full_time'].includes(body.package_type)) {
+      if (!body.start_date || !body.end_date) {
         return NextResponse.json(
-          { error: 'This member already has an active package that has not expired yet. A new package cannot be created until the current one expires.' },
+          { error: 'Start date and end date are required for this package type' },
           { status: 400 }
         );
       }
-      return NextResponse.json(
-        { error: 'This member already has an active package. Please deactivate, renew, or edit the existing one.' },
-        { status: 400 }
-      );
+
+      // Check for date overlap with ANY existing full_time/partial_full_time package (even expired)
+      const { data: existingPackages } = await supabase
+        .from('member_packages')
+        .select('id, package_type, status, start_date, end_date')
+        .eq('organization_id', orgId)
+        .eq('member_id', body.member_id)
+        .eq('member_type', body.member_type)
+        .in('package_type', ['full_time', 'partial_full_time'])
+        .not('start_date', 'is', null)
+        .not('end_date', 'is', null);
+
+      if (existingPackages && existingPackages.length > 0) {
+        // Check each existing package for date overlap
+        for (const pkg of existingPackages) {
+          const newStart = body.start_date;
+          const newEnd = body.end_date;
+          const existingStart = pkg.start_date;
+          const existingEnd = pkg.end_date;
+
+          // Check if ranges overlap: new_start <= existing_end AND new_end >= existing_start
+          if (newStart <= existingEnd && newEnd >= existingStart) {
+            return NextResponse.json(
+              {
+                error: `Date range conflicts with existing ${pkg.package_type} package (${existingStart} to ${existingEnd}). Please choose non-overlapping dates.`,
+                conflictingPackage: {
+                  id: pkg.id,
+                  type: pkg.package_type,
+                  start_date: existingStart,
+                  end_date: existingEnd,
+                  status: pkg.status
+                }
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
     }
 
     // Extract disabled_days and disabled_meals from body (for partial_full_time)

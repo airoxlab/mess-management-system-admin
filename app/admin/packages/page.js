@@ -53,6 +53,8 @@ export default function PackagesPage() {
   const [viewModal, setViewModal] = useState({ open: false, pkg: null });
   const [renewModal, setRenewModal] = useState({ open: false, pkg: null });
   const [depositModal, setDepositModal] = useState({ open: false, pkg: null });
+  const [deactivateModal, setDeactivateModal] = useState({ open: false, pkg: null });
+  const [reactivateModal, setReactivateModal] = useState({ open: false, pkg: null });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [packageHistory, setPackageHistory] = useState([]);
@@ -79,6 +81,7 @@ export default function PackagesPage() {
     disabled_meals: {},
   });
   const [depositAmount, setDepositAmount] = useState('');
+  const [deactivateReason, setDeactivateReason] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [packageTypeFilter, setPackageTypeFilter] = useState('all');
@@ -522,20 +525,67 @@ export default function PackagesPage() {
       }
     }
 
-    // For new packages: block if member already has an active non-expired full_time/partial_full_time package
-    if (!editingPackage && ['full_time', 'partial_full_time'].includes(formData.package_type)) {
-      const today = new Date().toISOString().split('T')[0];
-      const existingActive = packages.find(p =>
+    // RULE 1: Strict one-package-per-member - block if member has active OR deactivated package
+    if (!editingPackage) {
+      const existingPackage = packages.find(p =>
         p.member_id === formData.member_id &&
         p.member_type === formData.member_type &&
-        ['full_time', 'partial_full_time'].includes(p.package_type) &&
-        p.is_active &&
-        p.status === 'active' &&
-        p.end_date &&
-        p.end_date >= today
+        (p.status === 'active' || p.status === 'deactivated')
       );
-      if (existingActive) {
-        toast.error('This member already has an active package that has not expired yet. A new package cannot be created until the current one expires.');
+
+      if (existingPackage) {
+        const existingTypeName = PACKAGE_TYPE_LABELS[existingPackage.package_type];
+        const statusText = existingPackage.status === 'deactivated' ? 'deactivated' : 'active';
+        const actionText = existingPackage.status === 'deactivated'
+          ? 'delete it or reactivate it'
+          : 'wait for it to expire or deactivate it';
+
+        toast.error(
+          `This member already has a ${statusText} ${existingTypeName} package. ` +
+          `Please ${actionText} before creating a new package.`,
+          { duration: 6000 }
+        );
+        return;
+      }
+    }
+
+    // RULE 2: Date overlap prevention - for full_time and partial_full_time packages only
+    if (!editingPackage && ['full_time', 'partial_full_time'].includes(formData.package_type)) {
+      if (!formData.start_date || !formData.end_date) {
+        toast.error('Start date and end date are required');
+        return;
+      }
+
+      // Check for date overlap with ANY existing full_time/partial_full_time package (even expired ones)
+      const overlappingPackage = packages.find(p => {
+        // Only check against full_time and partial_full_time packages with dates
+        if (!['full_time', 'partial_full_time'].includes(p.package_type)) return false;
+        if (!p.start_date || !p.end_date) return false;
+
+        // Only check packages for the same member
+        if (p.member_id !== formData.member_id || p.member_type !== formData.member_type) return false;
+
+        // Check if date ranges overlap: new_start <= existing_end AND new_end >= existing_start
+        const newStart = formData.start_date;
+        const newEnd = formData.end_date;
+        const existingStart = p.start_date;
+        const existingEnd = p.end_date;
+
+        return newStart <= existingEnd && newEnd >= existingStart;
+      });
+
+      if (overlappingPackage) {
+        const overlappingTypeName = PACKAGE_TYPE_LABELS[overlappingPackage.package_type];
+        const overlappingStatus = PACKAGE_STATUS_LABELS[getRealTimeStatus(overlappingPackage)] || overlappingPackage.status;
+
+        toast.error(
+          `Date range conflicts with existing ${overlappingTypeName} package.\n\n` +
+          `Existing Package:\n` +
+          `• Dates: ${overlappingPackage.start_date} to ${overlappingPackage.end_date}\n` +
+          `• Status: ${overlappingStatus}\n\n` +
+          `Please choose non-overlapping dates.`,
+          { duration: 8000 }
+        );
         return;
       }
     }
@@ -714,6 +764,59 @@ export default function PackagesPage() {
     }
   };
 
+  const handleDeactivate = async () => {
+    if (!deactivateModal.pkg) return;
+
+    try {
+      setSaving(true);
+      const response = await api.post(`/api/member-packages-v2/${deactivateModal.pkg.id}/deactivate`, {
+        reason: deactivateReason || null,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to deactivate package');
+      }
+
+      toast.success('Package deactivated successfully');
+      setPackages(prev => prev.map(p =>
+        p.id === deactivateModal.pkg.id ? data.package : p
+      ));
+      setDeactivateModal({ open: false, pkg: null });
+      setDeactivateReason('');
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!reactivateModal.pkg) return;
+
+    try {
+      setSaving(true);
+      const response = await api.post(`/api/member-packages-v2/${reactivateModal.pkg.id}/reactivate`);
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to reactivate package');
+      }
+
+      toast.success('Package reactivated successfully');
+      setPackages(prev => prev.map(p =>
+        p.id === reactivateModal.pkg.id ? data.package : p
+      ));
+      setReactivateModal({ open: false, pkg: null });
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const getTypeBadgeColor = (type) => {
     switch (type) {
       case 'student': return 'bg-blue-100 text-blue-700';
@@ -736,6 +839,7 @@ export default function PackagesPage() {
   // Get the real-time status of a package based on actual date
   const getRealTimeStatus = (pkg) => {
     if (pkg.status === 'renewed') return 'renewed';
+    if (pkg.status === 'deactivated') return 'deactivated';
     if (pkg.status === 'expired' || !pkg.is_active) return 'expired';
     // For full_time and partial_full_time, check if end_date has passed
     if (['full_time', 'partial_full_time'].includes(pkg.package_type) && pkg.end_date) {
@@ -750,6 +854,7 @@ export default function PackagesPage() {
       case 'active': return 'bg-green-100 text-green-700';
       case 'expired': return 'bg-red-100 text-red-700';
       case 'renewed': return 'bg-blue-100 text-blue-700';
+      case 'deactivated': return 'bg-gray-100 text-gray-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -980,7 +1085,15 @@ export default function PackagesPage() {
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                               </button>
                             )}
+                            <button onClick={() => { setDeactivateReason(''); setDeactivateModal({ open: true, pkg }); }} className="p-1 text-orange-600 hover:bg-orange-50 rounded" title="Deactivate">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                            </button>
                           </>
+                        )}
+                        {getRealTimeStatus(pkg) === 'deactivated' && (
+                          <button onClick={() => setReactivateModal({ open: true, pkg })} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Reactivate">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          </button>
                         )}
                         {['active', 'expired'].includes(getRealTimeStatus(pkg)) && pkg.package_type !== 'daily_basis' && (
                           <button onClick={() => openRenewModal(pkg)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Renew">
@@ -1468,6 +1581,8 @@ export default function PackagesPage() {
                         created: { color: 'bg-green-500', label: 'Package Created', textColor: 'text-green-700' },
                         expired: { color: 'bg-red-500', label: 'Package Expired', textColor: 'text-red-700' },
                         renewed: { color: 'bg-blue-500', label: 'Package Renewed', textColor: 'text-blue-700' },
+                        deactivated: { color: 'bg-orange-500', label: 'Package Deactivated', textColor: 'text-orange-700' },
+                        reactivated: { color: 'bg-green-500', label: 'Package Reactivated', textColor: 'text-green-700' },
                       };
                       const config = actionConfig[log.action] || { color: 'bg-gray-500', label: log.action, textColor: 'text-gray-700' };
 
@@ -1749,6 +1864,93 @@ export default function PackagesPage() {
         confirmText="Delete"
         variant="danger"
         loading={deleting}
+      />
+
+      {/* Deactivate Confirmation Modal */}
+      <Modal
+        isOpen={deactivateModal.open}
+        onClose={() => { setDeactivateModal({ open: false, pkg: null }); setDeactivateReason(''); }}
+        title="Deactivate Package"
+        size="sm"
+      >
+        {deactivateModal.pkg && (
+          <form onSubmit={(e) => { e.preventDefault(); handleDeactivate(); }}>
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600">
+                Are you sure you want to deactivate this package? The package will be suspended temporarily and can be reactivated later.
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason (Optional)
+                </label>
+                <select
+                  value={deactivateReason}
+                  onChange={(e) => setDeactivateReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-primary-500 focus:border-primary-500 bg-white"
+                >
+                  <option value="">Select a reason...</option>
+                  <option value="Member requested suspension">Member requested suspension</option>
+                  <option value="Payment pending">Payment pending</option>
+                  <option value="Temporary leave">Temporary leave</option>
+                  <option value="Under review">Under review</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {deactivateReason === 'Other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Custom Reason
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter reason..."
+                    onChange={(e) => setDeactivateReason(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              )}
+
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <svg className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div className="text-xs text-orange-800">
+                    <strong>Note:</strong> Package data will be preserved. You can reactivate this package at any time.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4 mt-4 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => { setDeactivateModal({ open: false, pkg: null }); setDeactivateReason(''); }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button type="submit" loading={saving} className="flex-1 bg-orange-600 hover:bg-orange-700">
+                Deactivate
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Reactivate Confirmation Modal */}
+      <ConfirmModal
+        isOpen={reactivateModal.open}
+        onClose={() => setReactivateModal({ open: false, pkg: null })}
+        onConfirm={handleReactivate}
+        title="Reactivate Package"
+        message="Are you sure you want to reactivate this package? It will become active again and the member will be able to use their meals."
+        confirmText="Reactivate"
+        variant="success"
+        loading={saving}
       />
     </div>
   );

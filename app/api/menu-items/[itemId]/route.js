@@ -10,7 +10,7 @@ export async function PUT(request, { params }) {
 
     const { itemId } = await params;
     const body = await request.json();
-    const { name, description, price, category_id, image_url, is_available, sort_order } = body;
+    const { name, description, price, category_id, image_url, is_available, sort_order, meal_type } = body;
 
     const updateData = {};
     if (name !== undefined) updateData.name = name.trim();
@@ -20,6 +20,7 @@ export async function PUT(request, { params }) {
     if (image_url !== undefined) updateData.image_url = image_url || null;
     if (is_available !== undefined) updateData.is_available = is_available;
     if (sort_order !== undefined) updateData.sort_order = parseInt(sort_order) || 0;
+    if (meal_type !== undefined) updateData.meal_type = meal_type;
 
     const { data: item, error } = await supabase
       .from('menu_items')
