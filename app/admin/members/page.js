@@ -736,7 +736,7 @@ export default function MembersPage() {
           </div>
           <TextArea label="Residential Address" name="residential_address" value={formData.residential_address} onChange={handleFormChange} error={formErrors.residential_address} rows={2} required />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }]} required />
+            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial_full_time', label: 'Full Time Weekend Off' }, { value: 'partial', label: 'Partial' }, { value: 'daily_basis', label: 'Daily Basis' }]} required />
             <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} error={formErrors.food_preference} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} required />
           </div>
           <div>
@@ -827,7 +827,7 @@ export default function MembersPage() {
             <Input label="Date of Birth" name="date_of_birth" type="date" value={formData.date_of_birth} onChange={handleFormChange} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }, { value: 'day_to_day', label: 'Day to Day' }]} required />
+            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial_full_time', label: 'Full Time Weekend Off' }, { value: 'partial', label: 'Partial' }, { value: 'daily_basis', label: 'Daily Basis' }]} required />
             <Select label="Preferred Meal Plan" name="preferred_meal_plan" value={formData.preferred_meal_plan} onChange={handleFormChange} error={formErrors.preferred_meal_plan} options={[{ value: 'lunch', label: 'Lunch Only' }, { value: 'dinner', label: 'Dinner Only' }, { value: 'full_day', label: 'Full Day' }]} required />
           </div>
           <Select label="Food Preference" name="food_preference" value={formData.food_preference} onChange={handleFormChange} error={formErrors.food_preference} options={[{ value: 'vegetarian', label: 'Vegetarian' }, { value: 'non_vegetarian', label: 'Non-Vegetarian' }, { value: 'both', label: 'Both' }]} required />
@@ -885,7 +885,7 @@ export default function MembersPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select label="Duty Shift" name="duty_shift" value={formData.duty_shift} onChange={handleFormChange} error={formErrors.duty_shift} options={[{ value: 'morning', label: 'Morning' }, { value: 'evening', label: 'Evening' }, { value: 'night', label: 'Night' }, { value: 'full_day', label: 'Full Day' }]} required />
-            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial', label: 'Partial' }]} required />
+            <Select label="Membership Type" name="membership_type" value={formData.membership_type} onChange={handleFormChange} error={formErrors.membership_type} options={[{ value: 'full_time', label: 'Full Time' }, { value: 'partial_full_time', label: 'Full Time Weekend Off' }, { value: 'partial', label: 'Partial' }, { value: 'daily_basis', label: 'Daily Basis' }]} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Meal Timing Preference <span className="text-red-500">*</span></label>

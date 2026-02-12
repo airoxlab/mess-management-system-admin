@@ -19,6 +19,86 @@ export async function POST(request) {
       );
     }
 
+    // Get member's active package
+    const { data: memberPackage, error: packageError } = await supabase
+      .from('member_packages')
+      .select('*')
+      .eq('organization_id', orgId)
+      .eq('member_id', member_id)
+      .eq('member_type', member_type)
+      .eq('is_active', true)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (packageError) {
+      console.error('Error fetching member package:', packageError);
+      return NextResponse.json(
+        { error: 'Failed to fetch member package' },
+        { status: 500 }
+      );
+    }
+
+    // If member has a daily_basis package, check balance and deduct
+    if (memberPackage && memberPackage.package_type === 'daily_basis') {
+      const mealEnabledKey = `${meal_type}_enabled`;
+      if (!memberPackage[mealEnabledKey]) {
+        return NextResponse.json(
+          { error: `${meal_type} is not enabled for this member's package` },
+          { status: 400 }
+        );
+      }
+
+      const priceKey = `${meal_type}_price`;
+      const mealPrice = memberPackage[priceKey] || 0;
+
+      if (memberPackage.balance < mealPrice) {
+        return NextResponse.json({
+          error: `Insufficient balance. Current: Rs. ${memberPackage.balance.toFixed(2)}, Required: Rs. ${mealPrice.toFixed(2)}`,
+        }, { status: 400 });
+      }
+
+      // Deduct balance
+      const newBalance = memberPackage.balance - mealPrice;
+      const { error: updateBalanceError } = await supabase
+        .from('member_packages')
+        .update({ balance: newBalance })
+        .eq('id', memberPackage.id);
+
+      if (updateBalanceError) {
+        console.error('Error updating balance:', updateBalanceError);
+        return NextResponse.json(
+          { error: 'Failed to deduct balance' },
+          { status: 500 }
+        );
+      }
+
+      // Create transaction record
+      await supabase.from('daily_basis_transactions').insert([{
+        organization_id: orgId,
+        package_id: memberPackage.id,
+        member_id,
+        transaction_type: 'meal_deduction',
+        amount: mealPrice,
+        balance_before: memberPackage.balance,
+        balance_after: newBalance,
+        meal_type,
+        description: `${meal_type.charAt(0).toUpperCase() + meal_type.slice(1)} consumption`,
+      }]);
+
+      // Create consumption history record
+      await supabase.from('meal_consumption_history').insert([{
+        organization_id: orgId,
+        package_id: memberPackage.id,
+        member_id,
+        member_type,
+        meal_type,
+        amount_deducted: mealPrice,
+        balance_after: newBalance,
+      }]);
+
+      console.log(`✅ Deducted Rs. ${mealPrice} from daily basis package. New balance: Rs. ${newBalance}`);
+    }
+
     // 1. Create/update meal selection record (mark as needed)
     const neededKey = `${meal_type}_needed`;
 

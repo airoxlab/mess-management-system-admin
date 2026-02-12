@@ -33,6 +33,7 @@ const getInitialFormData = () => ({
   total_lunch: 0,
   total_dinner: 0,
   price: '',
+  discount: '',
   balance: '',
   breakfast_price: '',
   lunch_price: '',
@@ -74,6 +75,7 @@ export default function PackagesPage() {
     lunch_price: '',
     dinner_price: '',
     price: '',
+    discount: '',
     balance: '',
     start_date: '',
     end_date: '',
@@ -355,6 +357,7 @@ export default function PackagesPage() {
       total_lunch: pkg.total_lunch || 0,
       total_dinner: pkg.total_dinner || 0,
       price: pkg.price || '',
+      discount: pkg.discount || '',
       balance: pkg.balance || '',
       breakfast_price: pkg.breakfast_price || '',
       lunch_price: pkg.lunch_price || '',
@@ -400,6 +403,7 @@ export default function PackagesPage() {
       lunch_price: pkg.lunch_price ?? '',
       dinner_price: pkg.dinner_price ?? '',
       price: pkg.price ?? '',
+      discount: pkg.discount ?? '',
       balance: pkg.balance ?? '',
       start_date: '',
       end_date: '',
@@ -599,6 +603,7 @@ export default function PackagesPage() {
         start_date: formData.start_date || null,
         end_date: formData.end_date || null,
         price: parseFloat(formData.price) || 0,
+        discount: parseFloat(formData.discount) || 0,
         balance: parseFloat(formData.balance) || 0,
         breakfast_price: parseFloat(formData.breakfast_price) || 0,
         lunch_price: parseFloat(formData.lunch_price) || 0,
@@ -680,6 +685,7 @@ export default function PackagesPage() {
           lunch_price: parseFloat(renewFormData.lunch_price) || 0,
           dinner_price: parseFloat(renewFormData.dinner_price) || 0,
           price: parseFloat(renewFormData.price) || 0,
+          discount: parseFloat(renewFormData.discount) || 0,
           balance: parseFloat(renewFormData.balance) || 0,
           disabled_days: renewFormData.disabled_days || [],
         });
@@ -1351,6 +1357,22 @@ export default function PackagesPage() {
                 </div>
               )}
 
+              {/* Discount */}
+              {selectedMember && formData.package_type !== 'daily_basis' && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Discount (PKR)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={formData.price || 0}
+                    value={formData.discount}
+                    onChange={(e) => setFormData(prev => ({ ...prev, discount: e.target.value }))}
+                    placeholder="e.g., 500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              )}
+
               {/* Summary */}
               {selectedMember && formData.package_type !== 'daily_basis' && (
                 <div className="p-3 bg-primary-50 rounded-lg border border-primary-200">
@@ -1369,6 +1391,28 @@ export default function PackagesPage() {
                       Total: <strong>{calculatedMealCounts.total}</strong> meals
                     </div>
                   </div>
+                  {formData.price && (
+                    <div className="mt-3 pt-3 border-t border-primary-200">
+                      <div className="flex flex-col gap-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Package Price:</span>
+                          <strong>PKR {parseFloat(formData.price || 0).toFixed(2)}</strong>
+                        </div>
+                        {formData.discount && parseFloat(formData.discount) > 0 && (
+                          <>
+                            <div className="flex justify-between text-red-600">
+                              <span>Discount:</span>
+                              <strong>- PKR {parseFloat(formData.discount || 0).toFixed(2)}</strong>
+                            </div>
+                            <div className="flex justify-between text-lg font-bold text-primary-700 pt-1 border-t border-primary-300">
+                              <span>Final Price:</span>
+                              <strong>PKR {(parseFloat(formData.price || 0) - parseFloat(formData.discount || 0)).toFixed(2)}</strong>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1745,6 +1789,13 @@ export default function PackagesPage() {
                   </div>
                 )}
 
+                {renewFormData.package_type !== 'daily_basis' && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Discount (PKR)</label>
+                    <input type="number" min="0" max={renewFormData.price || 0} value={renewFormData.discount} onChange={(e) => setRenewFormData(prev => ({ ...prev, discount: e.target.value }))} placeholder="e.g., 500" className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                )}
+
                 {/* Summary */}
                 {renewFormData.package_type !== 'daily_basis' && (
                   <div className="p-2 bg-primary-50 rounded-lg border border-primary-200 text-sm">
@@ -1760,6 +1811,28 @@ export default function PackagesPage() {
                         {renewFormData.breakfast_enabled && <span>B: <strong>{(parseInt(renewFormData.total_breakfast) || 0) + (renewFormData.remaining?.breakfast || 0)}</strong></span>}
                         {renewFormData.lunch_enabled && <span>L: <strong>{(parseInt(renewFormData.total_lunch) || 0) + (renewFormData.remaining?.lunch || 0)}</strong></span>}
                         {renewFormData.dinner_enabled && <span>D: <strong>{(parseInt(renewFormData.total_dinner) || 0) + (renewFormData.remaining?.dinner || 0)}</strong></span>}
+                      </div>
+                    )}
+                    {renewFormData.price && (
+                      <div className="mt-2 pt-2 border-t border-primary-200">
+                        <div className="flex flex-col gap-1 text-xs">
+                          <div className="flex justify-between">
+                            <span>Package Price:</span>
+                            <strong>PKR {parseFloat(renewFormData.price || 0).toFixed(2)}</strong>
+                          </div>
+                          {renewFormData.discount && parseFloat(renewFormData.discount) > 0 && (
+                            <>
+                              <div className="flex justify-between text-red-600">
+                                <span>Discount:</span>
+                                <strong>- PKR {parseFloat(renewFormData.discount || 0).toFixed(2)}</strong>
+                              </div>
+                              <div className="flex justify-between text-sm font-bold text-primary-700 pt-1 border-t border-primary-300">
+                                <span>Final Price:</span>
+                                <strong>PKR {(parseFloat(renewFormData.price || 0) - parseFloat(renewFormData.discount || 0)).toFixed(2)}</strong>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

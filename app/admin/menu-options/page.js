@@ -13,6 +13,9 @@ export default function MenuOptionsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingOptionId, setDeletingOptionId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [selectedMealType, setSelectedMealType] = useState(null);
   const [editingOption, setEditingOption] = useState(null);
 
@@ -91,6 +94,9 @@ export default function MenuOptionsPage() {
   const handleAddOptions = async (e) => {
     e.preventDefault();
 
+    // Prevent duplicate submissions
+    if (submitting) return;
+
     // Validate that at least one option has a name
     const validOptions = bulkOptions.filter(opt => opt.option_name.trim());
     if (validOptions.length === 0) {
@@ -99,6 +105,8 @@ export default function MenuOptionsPage() {
     }
 
     try {
+      setSubmitting(true);
+
       // Create all options
       const promises = validOptions.map((opt, index) =>
         api.post('/api/menu-options', {
@@ -125,6 +133,8 @@ export default function MenuOptionsPage() {
       fetchOptions();
     } catch (error) {
       toast.error(error.message || 'Failed to add menu options');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -162,11 +172,16 @@ export default function MenuOptionsPage() {
     }
   };
 
-  const handleDeleteOption = async (optionId) => {
-    if (!confirm('Are you sure you want to delete this menu option?')) return;
+  const openDeleteModal = (optionId) => {
+    setDeletingOptionId(optionId);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteOption = async () => {
+    if (!deletingOptionId) return;
 
     try {
-      const response = await api.delete(`/api/menu-options/${optionId}`);
+      const response = await api.delete(`/api/menu-options/${deletingOptionId}`);
 
       if (!response.ok) {
         const data = await response.json();
@@ -175,8 +190,12 @@ export default function MenuOptionsPage() {
 
       toast.success('Menu option deleted successfully');
       fetchOptions();
+      setShowDeleteModal(false);
+      setDeletingOptionId(null);
     } catch (error) {
       toast.error(error.message || 'Failed to delete menu option');
+      setShowDeleteModal(false);
+      setDeletingOptionId(null);
     }
   };
 
@@ -376,7 +395,7 @@ export default function MenuOptionsPage() {
                     options={getOptionsForMealAndDate(meal.value, selectedDate)}
                     onAdd={() => openAddModal(meal.value)}
                     onEdit={openEditModal}
-                    onDelete={handleDeleteOption}
+                    onDelete={openDeleteModal}
                   />
                 ))}
               </div>
@@ -613,9 +632,22 @@ export default function MenuOptionsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                    disabled={submitting}
+                    className={`flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center gap-2 ${
+                      submitting ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
-                    Add {bulkOptions.filter(o => o.option_name.trim()).length} Option(s)
+                    {submitting ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Adding...
+                      </>
+                    ) : (
+                      `Add ${bulkOptions.filter(o => o.option_name.trim()).length} Option(s)`
+                    )}
                   </button>
                 </div>
               </form>
@@ -726,6 +758,44 @@ export default function MenuOptionsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+              <div className="p-6">
+                <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-red-100 rounded-full">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Delete Menu Option</h3>
+                <p className="text-gray-600 text-center mb-6">
+                  Are you sure you want to delete this menu option? This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setDeletingOptionId(null);
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteOption}
+                    className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
