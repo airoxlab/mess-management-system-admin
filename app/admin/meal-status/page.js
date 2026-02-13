@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { formatDate, formatTime } from '@/lib/utils';
 import api from '@/lib/api-client';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const MEMBER_TYPE_LABELS = {
   student: 'Student',
@@ -130,6 +132,15 @@ export default function MealStatusPage() {
   const [menuOptions, setMenuOptions] = useState([]);
   const [selectedMenuOption, setSelectedMenuOption] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [exportModal, setExportModal] = useState({ open: false });
+  const [selectedColumns, setSelectedColumns] = useState({
+    member: true,
+    type: true,
+    department: true,
+    breakfast: true,
+    lunch: true,
+    dinner: true
+  });
 
   const isSingleDay = dates.length <= 1;
 
@@ -371,6 +382,151 @@ export default function MealStatusPage() {
       return getSkipScore(b) - getSkipScore(a);
     });
 
+  // Toggle column visibility
+  const toggleColumn = (column) => {
+    setSelectedColumns(prev => {
+      const newState = { ...prev, [column]: !prev[column] };
+
+      // Ensure at least one column is selected
+      const hasSelection = Object.values(newState).some(v => v);
+      if (!hasSelection) {
+        toast.error('At least one column must be selected');
+        return prev;
+      }
+
+      return newState;
+    });
+  };
+
+  // Generate PDF with selected columns
+  const handleGeneratePDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Use filtered members
+    const membersToExport = filteredMembers;
+
+    if (membersToExport.length === 0) {
+      toast.error('No members to export. Please adjust your filters.');
+      return;
+    }
+
+    // Build column definitions based on selected columns
+    const columnMap = {
+      member: { header: 'Member', dataKey: 'member' },
+      type: { header: 'Type', dataKey: 'type' },
+      department: { header: 'Department', dataKey: 'department' },
+      breakfast: { header: 'Breakfast', dataKey: 'breakfast' },
+      lunch: { header: 'Lunch', dataKey: 'lunch' },
+      dinner: { header: 'Dinner', dataKey: 'dinner' }
+    };
+
+    const columns = Object.entries(selectedColumns)
+      .filter(([key, selected]) => selected)
+      .map(([key]) => columnMap[key]);
+
+    if (columns.length === 0) {
+      toast.error('Please select at least one column to export');
+      return;
+    }
+
+    // PDF Header with green background
+    doc.setFillColor(16, 185, 129);
+    doc.rect(0, 0, pageWidth, 35, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MEAL STATUS REPORT', pageWidth / 2, 13, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated on ${new Date().toLocaleString()}`, pageWidth / 2, 22, { align: 'center' });
+    doc.setFontSize(8);
+    const filterText = `Date: ${datePreset === 'custom' ? customDate : datePreset.toUpperCase()} | Type: ${filterType} | Status: ${filterStatus} | Meal: ${filterMeal}`;
+    doc.text(filterText, pageWidth / 2, 29, { align: 'center' });
+
+    doc.setTextColor(0, 0, 0);
+
+    // Prepare table data - for single day view
+    const tableData = membersToExport.map((member) => {
+      const row = {};
+      if (selectedColumns.member) row.member = member.name || member.full_name || '-';
+      if (selectedColumns.type) row.type = MEMBER_TYPE_LABELS[member.member_type] || '-';
+      if (selectedColumns.department) row.department = member.department || '-';
+
+      // Get meal status from first day
+      const day = member.days && member.days[0];
+      if (day) {
+        if (selectedColumns.breakfast) {
+          const b = day.breakfast;
+          row.breakfast = b.status === 'collected' ? `Confirmed ${b.menu_option || ''}`.trim() :
+                        b.status === 'skipped' ? 'Skipped' :
+                        b.status === 'missed' ? 'Missed' : 'Pending';
+        }
+        if (selectedColumns.lunch) {
+          const l = day.lunch;
+          row.lunch = l.status === 'collected' ? `Confirmed ${l.menu_option || ''}`.trim() :
+                     l.status === 'skipped' ? 'Skipped' :
+                     l.status === 'missed' ? 'Missed' : 'Pending';
+        }
+        if (selectedColumns.dinner) {
+          const d = day.dinner;
+          row.dinner = d.status === 'collected' ? `Confirmed ${d.menu_option || ''}`.trim() :
+                      d.status === 'skipped' ? 'Skipped' :
+                      d.status === 'missed' ? 'Missed' : 'Pending';
+        }
+      }
+
+      return row;
+    });
+
+    // Generate table using autoTable plugin
+    autoTable(doc, {
+      startY: 40,
+      head: [columns.map(col => col.header)],
+      body: tableData.map(row => columns.map(col => row[col.dataKey] || '-')),
+      theme: 'striped',
+      headStyles: {
+        fillColor: [16, 185, 129],
+        textColor: 255,
+        fontStyle: 'bold',
+        fontSize: 9
+      },
+      styles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    // Footer with page numbers
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(156, 163, 175);
+      doc.text(
+        'Cafeteria Management System',
+        pageWidth / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'center' }
+      );
+      doc.text(
+        `Page ${i} of ${pageCount}`,
+        pageWidth - 10,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'right' }
+      );
+    }
+
+    // Save PDF with date in filename
+    const filename = `Meal_Status_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(filename);
+    toast.success(`Exported ${membersToExport.length} members to PDF`);
+
+    // Close modal
+    setExportModal({ open: false });
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-[1400px] mx-auto">
       {/* Header */}
@@ -387,6 +543,16 @@ export default function MealStatusPage() {
                 Live - Auto-refresh: 30s
               </span>
             )}
+            <button
+              onClick={() => setExportModal({ open: true })}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+              title="Export to PDF"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              Export PDF
+            </button>
             <button
               onClick={() => {
                 const { startDate, endDate } = getDateRange(datePreset);
@@ -698,6 +864,110 @@ export default function MealStatusPage() {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export PDF Modal */}
+      {exportModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setExportModal({ open: false })}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Export Meal Status to PDF
+            </h3>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Select which columns to include in the PDF export:
+            </p>
+
+            <div className="space-y-3 bg-gray-50 p-4 rounded-lg mb-4">
+              <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedColumns.member}
+                  onChange={() => toggleColumn('member')}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700">Member Name</span>
+              </label>
+
+              <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedColumns.type}
+                  onChange={() => toggleColumn('type')}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700">Type</span>
+              </label>
+
+              <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedColumns.department}
+                  onChange={() => toggleColumn('department')}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700">Department</span>
+              </label>
+
+              <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedColumns.breakfast}
+                  onChange={() => toggleColumn('breakfast')}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700">Breakfast</span>
+              </label>
+
+              <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedColumns.lunch}
+                  onChange={() => toggleColumn('lunch')}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700">Lunch</span>
+              </label>
+
+              <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedColumns.dinner}
+                  onChange={() => toggleColumn('dinner')}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700">Dinner</span>
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 p-3 rounded-lg mb-4">
+              <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>
+                Exporting {filteredMembers.length} member{filteredMembers.length !== 1 ? 's' : ''} based on active filters
+              </span>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setExportModal({ open: false })}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGeneratePDF}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Generate PDF
+              </button>
             </div>
           </div>
         </div>

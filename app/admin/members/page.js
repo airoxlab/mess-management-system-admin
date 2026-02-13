@@ -19,6 +19,8 @@ import {
   MEMBER_PAYMENT_METHOD_LABELS,
 } from '@/lib/constants';
 import api from '@/lib/api-client';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -119,7 +121,19 @@ export default function MembersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [genderFilter, setGenderFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Column selection state - all columns selected by default
+  const [selectedColumns, setSelectedColumns] = useState({
+    number: true,
+    name: true,
+    type: true,
+    id: true,
+    department: true,
+    contact: true,
+    status: true
+  });
 
   // Meal timings from organization settings
   const [mealTimings, setMealTimings] = useState({
@@ -136,6 +150,7 @@ export default function MembersPage() {
   const [addEditModal, setAddEditModal] = useState({ open: false, member: null, mode: 'add', memberType: 'student' });
   const [deleteModal, setDeleteModal] = useState({ open: false, member: null });
   const [statusModal, setStatusModal] = useState({ open: false, member: null });
+  const [exportModal, setExportModal] = useState({ open: false });
 
   // Form states
   const [formData, setFormData] = useState(initialStudentFormData);
@@ -250,7 +265,7 @@ export default function MembersPage() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, typeFilter]);
+  }, [searchQuery, statusFilter, typeFilter, genderFilter]);
 
   const loadAllMembers = async () => {
     try {
@@ -313,7 +328,13 @@ export default function MembersPage() {
     );
     const matchesStatus = statusFilter === 'all' || member.status === statusFilter;
     const matchesType = typeFilter === 'all' || member.member_type === typeFilter;
-    return matchesSearch && matchesStatus && matchesType;
+
+    // Gender filter: Only applies to students, always shows faculty/staff
+    const matchesGender = genderFilter === 'all' ||
+      member.member_type !== 'student' ||
+      member.gender === genderFilter;
+
+    return matchesSearch && matchesStatus && matchesType && matchesGender;
   });
 
   // Sort members
@@ -362,6 +383,22 @@ export default function MembersPage() {
       setSortColumn(column);
       setSortDirection('asc');
     }
+  };
+
+  // Toggle column visibility
+  const toggleColumn = (column) => {
+    setSelectedColumns(prev => {
+      const newState = { ...prev, [column]: !prev[column] };
+
+      // Ensure at least one column is selected
+      const hasSelection = Object.values(newState).some(v => v);
+      if (!hasSelection) {
+        toast.error('At least one column must be selected');
+        return prev;
+      }
+
+      return newState;
+    });
   };
 
   // Sort icon component
@@ -679,6 +716,119 @@ export default function MembersPage() {
     } finally {
       setUpdatingStatus(false);
     }
+  };
+
+  // Open export PDF modal
+  const exportMembersPDF = () => {
+    if (filteredMembers.length === 0) {
+      toast.error('No members to export. Please adjust your filters.');
+      return;
+    }
+    setExportModal({ open: true });
+  };
+
+  // Generate PDF with selected columns
+  const handleGeneratePDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Use already-filtered members from current view
+    const membersToExport = filteredMembers;
+
+    // Build column definitions based on selected columns
+    const columnMap = {
+      number: { header: '#', dataKey: 'number' },
+      name: { header: 'Name', dataKey: 'name' },
+      type: { header: 'Type', dataKey: 'type' },
+      id: { header: 'ID', dataKey: 'id' },
+      department: { header: 'Department', dataKey: 'department' },
+      contact: { header: 'Contact', dataKey: 'contact' },
+      status: { header: 'Status', dataKey: 'status' }
+    };
+
+    const columns = Object.entries(selectedColumns)
+      .filter(([key, selected]) => selected)
+      .map(([key]) => columnMap[key]);
+
+    if (columns.length === 0) {
+      toast.error('Please select at least one column to export');
+      return;
+    }
+
+    // PDF Header with green background
+    doc.setFillColor(16, 185, 129);
+    doc.rect(0, 0, pageWidth, 35, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MEMBERS REPORT', pageWidth / 2, 13, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated on ${new Date().toLocaleString()}`, pageWidth / 2, 22, { align: 'center' });
+    doc.setFontSize(8);
+    doc.text(`Filters: Type=${typeFilter}, Status=${statusFilter}, Gender=${genderFilter}`, pageWidth / 2, 29, { align: 'center' });
+
+    doc.setTextColor(0, 0, 0);
+
+    // Prepare table data
+    const tableData = membersToExport.map((member, index) => {
+      const row = {};
+      if (selectedColumns.number) row.number = (index + 1).toString();
+      if (selectedColumns.name) row.name = getMemberName(member);
+      if (selectedColumns.type) row.type = member.member_type;
+      if (selectedColumns.id) row.id = getMemberId(member);
+      if (selectedColumns.department) row.department = getDepartment(member);
+      if (selectedColumns.contact) row.contact = getContact(member);
+      if (selectedColumns.status) row.status = member.status || '-';
+      return row;
+    });
+
+    // Generate table using autoTable plugin
+    autoTable(doc, {
+      startY: 40,
+      head: [columns.map(col => col.header)],
+      body: tableData.map(row => columns.map(col => row[col.dataKey] || '-')),
+      theme: 'striped',
+      headStyles: {
+        fillColor: [16, 185, 129],
+        textColor: 255,
+        fontStyle: 'bold',
+        fontSize: 9
+      },
+      styles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    // Footer with page numbers
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(156, 163, 175);
+      doc.text(
+        'Cafeteria Management System',
+        pageWidth / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'center' }
+      );
+      doc.text(
+        `Page ${i} of ${pageCount}`,
+        pageWidth - 10,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'right' }
+      );
+    }
+
+    // Save PDF with date in filename
+    const filename = `Members_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(filename);
+    toast.success(`Exported ${membersToExport.length} members to PDF`);
+
+    // Close modal
+    setExportModal({ open: false });
   };
 
   // Get status badge color
@@ -1078,9 +1228,10 @@ export default function MembersPage() {
     setSearchQuery('');
     setStatusFilter('all');
     setTypeFilter('all');
+    setGenderFilter('all');
   };
 
-  const hasActiveFilters = searchQuery || statusFilter !== 'all' || typeFilter !== 'all';
+  const hasActiveFilters = searchQuery || statusFilter !== 'all' || typeFilter !== 'all' || genderFilter !== 'all';
 
   return (
     <div className="p-3 sm:p-4 lg:p-6">
@@ -1090,12 +1241,20 @@ export default function MembersPage() {
           <h1 className="text-lg sm:text-xl font-bold text-gray-900">Members</h1>
           <p className="text-xs sm:text-sm text-gray-500">Manage student, faculty, and staff members</p>
         </div>
-        <Button onClick={() => openAddModal('student')}>
-          <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Member
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportMembersPDF}>
+            <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Export PDF
+          </Button>
+          <Button onClick={() => openAddModal('student')}>
+            <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Member
+          </Button>
+        </div>
       </div>
 
       {/* Search & Filters */}
@@ -1130,6 +1289,15 @@ export default function MembersPage() {
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
+            </select>
+            <select
+              value={genderFilter}
+              onChange={(e) => setGenderFilter(e.target.value)}
+              className="flex-1 sm:w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-primary-500 focus:border-primary-500 bg-white"
+            >
+              <option value="all">All Gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
             </select>
           </div>
           <div className="flex gap-2 justify-end">
@@ -1357,6 +1525,106 @@ export default function MembersPage() {
           )}
           <div className="pt-3 border-t">
             <Button variant="outline" onClick={() => setStatusModal({ open: false, member: null })} className="w-full" disabled={updatingStatus}>Cancel</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Export PDF Modal */}
+      <Modal isOpen={exportModal.open} onClose={() => setExportModal({ open: false })} title="Export Members to PDF" size="md">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Select which columns to include in the PDF export:
+          </p>
+
+          <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+            <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+              <input
+                type="checkbox"
+                checked={selectedColumns.number}
+                onChange={() => toggleColumn('number')}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700"># (Number)</span>
+            </label>
+
+            <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+              <input
+                type="checkbox"
+                checked={selectedColumns.name}
+                onChange={() => toggleColumn('name')}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700">Name</span>
+            </label>
+
+            <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+              <input
+                type="checkbox"
+                checked={selectedColumns.type}
+                onChange={() => toggleColumn('type')}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700">Type</span>
+            </label>
+
+            <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+              <input
+                type="checkbox"
+                checked={selectedColumns.id}
+                onChange={() => toggleColumn('id')}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700">ID</span>
+            </label>
+
+            <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+              <input
+                type="checkbox"
+                checked={selectedColumns.department}
+                onChange={() => toggleColumn('department')}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700">Department</span>
+            </label>
+
+            <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+              <input
+                type="checkbox"
+                checked={selectedColumns.contact}
+                onChange={() => toggleColumn('contact')}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700">Contact</span>
+            </label>
+
+            <label className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-2 rounded">
+              <input
+                type="checkbox"
+                checked={selectedColumns.status}
+                onChange={() => toggleColumn('status')}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700">Status</span>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+            <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>
+              Exporting {filteredMembers.length} member{filteredMembers.length !== 1 ? 's' : ''} based on active filters
+            </span>
+          </div>
+
+          <div className="flex gap-3 pt-3 border-t">
+            <Button variant="outline" onClick={() => setExportModal({ open: false })} className="flex-1">Cancel</Button>
+            <Button onClick={handleGeneratePDF} className="flex-1">
+              <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              Generate PDF
+            </Button>
           </div>
         </div>
       </Modal>
