@@ -35,6 +35,8 @@ export default function SettingsPage() {
     breakfast_price: 50,
     lunch_price: 80,
     dinner_price: 70,
+    // POS Settings
+    pos_menu_selection_enabled: true,
   });
 
   useEffect(() => {
@@ -90,6 +92,8 @@ export default function SettingsPage() {
           breakfast_price: dailyBasisPricing.breakfast ?? 50,
           lunch_price: dailyBasisPricing.lunch ?? 80,
           dinner_price: dailyBasisPricing.dinner ?? 70,
+          // POS Settings
+          pos_menu_selection_enabled: orgSettings.pos_menu_selection_enabled ?? true,
         });
       }
     } catch (error) {
@@ -221,7 +225,7 @@ export default function SettingsPage() {
     try {
       setSaving(true);
 
-      // Combine meal timings and daily basis pricing into the settings jsonb field
+      // Combine meal timings, daily basis pricing, and POS settings into the settings jsonb field
       const combinedSettings = {
         breakfast_start: settings.breakfast_start,
         breakfast_end: settings.breakfast_end,
@@ -233,7 +237,8 @@ export default function SettingsPage() {
           breakfast: parseFloat(settings.breakfast_price) || 50,
           lunch: parseFloat(settings.lunch_price) || 80,
           dinner: parseFloat(settings.dinner_price) || 70,
-        }
+        },
+        pos_menu_selection_enabled: settings.pos_menu_selection_enabled ?? true,
       };
 
       // DEBUG: Log what we're about to save
@@ -289,6 +294,8 @@ export default function SettingsPage() {
           breakfast_price: savedPricing.breakfast ?? 50,
           lunch_price: savedPricing.lunch ?? 80,
           dinner_price: savedPricing.dinner ?? 70,
+          // POS Settings
+          pos_menu_selection_enabled: orgSettings.pos_menu_selection_enabled ?? true,
         });
       }
 
@@ -344,6 +351,11 @@ export default function SettingsPage() {
     { id: 'meal_timings', label: 'Meal Timings', icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    )},
+    { id: 'pos_settings', label: 'POS Settings', icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
       </svg>
     )},
   ];
@@ -1128,6 +1140,116 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </>)}
+
+              {/* POS Settings Tab */}
+              {activeTab === 'pos_settings' && (
+                <div className="space-y-6">
+                  {/* POS Menu Selection Toggle */}
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                          <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">POS Menu Selection</h3>
+                          <p className="text-sm text-gray-500">Control whether users can select items at POS</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-6">
+                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-medium text-gray-900">Enable Menu Selection at POS</h4>
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                              settings.pos_menu_selection_enabled
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}>
+                              {settings.pos_menu_selection_enabled ? 'ENABLED' : 'DISABLED'}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            {settings.pos_menu_selection_enabled
+                              ? 'Users can select menu items when they scan at POS'
+                              : 'Users cannot select items at POS - they must pre-select from app'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSettings(prev => ({
+                            ...prev,
+                            pos_menu_selection_enabled: !prev.pos_menu_selection_enabled
+                          }))}
+                          className={`relative inline-flex h-8 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+                            settings.pos_menu_selection_enabled ? 'bg-green-600' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              settings.pos_menu_selection_enabled ? 'translate-x-6' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Info Box */}
+                      <div className={`mt-4 p-4 rounded-lg border ${
+                        settings.pos_menu_selection_enabled
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-amber-50 border-amber-200'
+                      }`}>
+                        <div className="flex gap-3">
+                          <svg className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                            settings.pos_menu_selection_enabled ? 'text-green-600' : 'text-amber-600'
+                          }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div className="flex-1">
+                            <h5 className={`text-sm font-semibold mb-1 ${
+                              settings.pos_menu_selection_enabled ? 'text-green-800' : 'text-amber-800'
+                            }`}>
+                              {settings.pos_menu_selection_enabled ? 'When Enabled:' : 'When Disabled:'}
+                            </h5>
+                            <ul className={`text-sm space-y-1 ${
+                              settings.pos_menu_selection_enabled ? 'text-green-700' : 'text-amber-700'
+                            }`}>
+                              {settings.pos_menu_selection_enabled ? (
+                                <>
+                                  <li>✓ All users can select items at POS counter</li>
+                                  <li>✓ Works for all package types (Daily Basis, Full Time, etc.)</li>
+                                  <li>✓ Users see "Select Your Items" screen when scanning card</li>
+                                </>
+                              ) : (
+                                <>
+                                  <li>✗ Users cannot select items at POS</li>
+                                  <li>✗ Selection screen will not appear</li>
+                                  <li>✓ Users must pre-select meals from user portal/app</li>
+                                  <li>✓ Error message shown if no pre-selection found</li>
+                                </>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Additional Info */}
+                      <p className="mt-4 text-xs text-gray-500 flex items-start gap-1.5">
+                        <svg className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>
+                          This is a master switch that applies to all users regardless of their package type.
+                          Use this to enforce pre-selection from the user portal and prevent on-the-spot ordering at POS.
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
